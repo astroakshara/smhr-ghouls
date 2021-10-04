@@ -1401,7 +1401,7 @@ class NormalizationTab(QtGui.QWidget):
             mask_kinds = [
                 #(0,  global_mask.get("rest_wavelength", [])),
                 (rv_applied*shift_tellurics,  global_mask.get("rest_wavelength", [])),
-                (rv_applied, global_mask.get("obs_wavelength", []))
+                (rv_applied*shift_tellurics, global_mask.get("obs_wavelength", []))
             ]
         else:
             mask_kinds = [
