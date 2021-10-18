@@ -278,8 +278,7 @@ class Spectrum1D(object):
             if k.startswith("BANDID")])).hexdigest()
         is_carpy_mike_product = (md5_hash == "0da149208a3c8ba608226544605ed600")
         # E. Holmbeck added the second line for du Pont
-        is_carpy_mike_product_old = (md5_hash == "e802331006006930ee0e60c7fbc66cec" \
-                                  or md5_hash == "82b65b4f21f94526a7ac1d4a197b5bfe")
+        is_carpy_mike_product_old = (md5_hash == "e802331006006930ee0e60c7fbc66cec")
         is_carpy_mage_product = (md5_hash == "6b2c2ec1c4e1b122ccab15eb9bd305bc")
         is_iraf_3band_product = (md5_hash == "a4d8f6f51a7260fce1642f7b42012969")
         is_apo_product = (image[0].header.get("OBSERVAT", None) == "APO")
@@ -342,14 +341,29 @@ class Spectrum1D(object):
                 ivar = 1./np.abs(flux)
                 # -------------------------------------------------------------
 
+		# E. Holmbeck added the "try" statement to test for old du Pont data.
+		# Warning: HACKY!
         else:
-            ivar = np.full_like(flux, np.nan)
-            logger.info("could not identify flux and ivar extensions "
-                        "(using nan for ivar)")
-            # It turns out this can mess you up badly so it's better to
-            # just throw the error.
-            if not override_bad:
-                raise NotImplementedError
+			try: #Assume OLD carpy
+				# inverse variance array
+				flux_ext = flux_ext or 1
+				noise_ext = ivar_ext or 2
+
+				logger.info(
+					"Trying for CarPy product. Using zero-indexed flux/noise "
+					"extensions (bands) {}/{}".format(flux_ext, noise_ext))
+
+				flux = image[0].data[flux_ext]
+				ivar = image[0].data[noise_ext]**(-2)
+			
+			except:
+				ivar = np.full_like(flux, np.nan)
+				logger.info("could not identify flux and ivar extensions "
+							"(using nan for ivar)")
+				# It turns out this can mess you up badly so it's better to
+				# just throw the error.
+				if not override_bad:
+					raise NotImplementedError
 
         dispersion = np.atleast_2d(dispersion)
         flux = np.atleast_2d(flux)
