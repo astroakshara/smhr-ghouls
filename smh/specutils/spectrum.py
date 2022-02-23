@@ -196,7 +196,7 @@ class Spectrum1D(object):
             
             ## Compute ivar assuming Poisson noise
             ivar = 1./flux
-        
+            
         # E. Holmbeck changed from tuple to list
         return [dispersion, flux, ivar, metadata]
 
@@ -282,6 +282,8 @@ class Spectrum1D(object):
         is_carpy_mage_product = (md5_hash == "6b2c2ec1c4e1b122ccab15eb9bd305bc")
         is_iraf_3band_product = (md5_hash == "a4d8f6f51a7260fce1642f7b42012969")
         is_apo_product = (image[0].header.get("OBSERVAT", None) == "APO")
+        # E. Holmbeck added:
+        is_HST_product = (md5_hash == 'd41d8cd98f00b204e9800998ecf8427e')
 
         if is_carpy_mike_product or is_carpy_mage_product or is_carpy_mike_product_old:
             # CarPy gives a 'noise' spectrum, which we must convert to an
@@ -313,7 +315,7 @@ class Spectrum1D(object):
             flux = image[0].data[flux_ext]
             ivar = image[0].data[noise_ext]**(-2)
 
-        elif is_apo_product:
+        elif is_apo_product or is_HST_product:
             flux_ext = flux_ext or 0
             if md5_hash == "9d008ba2c3dc15549fd8ffe8a605ec15":
                 noise_ext = ivar_ext or 3
@@ -331,7 +333,7 @@ class Spectrum1D(object):
                 
             else:
                 logger.info(
-                    "Recognized APO product, no noise. Using zero-indexed flux "
+                    "Recognized APO or HST product, no noise. Using zero-indexed flux "
                     "extension (bands) {}, Poisson noise".format(flux_ext))
                 # -------------------------------------------------------------
                 # E. Holmbeck changed these two lines for APO data
@@ -881,9 +883,7 @@ class Spectrum1D(object):
         continuum_indices = np.sort(list(set(continuum_indices).difference(
             zero_flux_indices)))
 
-        # Holmbeck chanaged 1 -> order
-        #if 1 > continuum_indices.size:
-        if order > continuum_indices.size:
+        if 1 > continuum_indices.size:
             no_continuum = np.nan * np.ones_like(dispersion)
             failed_spectrum = self.__class__(dispersion=dispersion,
                 flux=no_continuum, ivar=no_continuum, metadata=self.metadata)
@@ -917,10 +917,7 @@ class Spectrum1D(object):
         # TODO: Use inverse variance array when fitting polynomial/spline.
         for iteration in range(max_iterations):
             
-            # Holmbeck chanaged 1 -> order
-            #if 1 > continuum_indices.size:
-            if order > continuum_indices.size:
-
+            if 1 > continuum_indices.size:
                 no_continuum = np.nan * np.ones_like(dispersion)
                 failed_spectrum = self.__class__(dispersion=dispersion,
                     flux=no_continuum, ivar=no_continuum, metadata=self.metadata)
