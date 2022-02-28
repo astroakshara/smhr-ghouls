@@ -315,7 +315,7 @@ class Spectrum1D(object):
             flux = image[0].data[flux_ext]
             ivar = image[0].data[noise_ext]**(-2)
 
-        elif is_apo_product or is_HST_product:
+        elif is_apo_product:
             flux_ext = flux_ext or 0
             if md5_hash == "9d008ba2c3dc15549fd8ffe8a605ec15":
                 noise_ext = ivar_ext or 3
@@ -333,15 +333,26 @@ class Spectrum1D(object):
                 
             else:
                 logger.info(
-                    "Recognized APO or HST product, no noise. Using zero-indexed flux "
+                    "Recognized APO product, no noise. Using zero-indexed flux "
                     "extension (bands) {}, Poisson noise".format(flux_ext))
                 # -------------------------------------------------------------
                 # E. Holmbeck changed these two lines for APO data
                 #flux = image[0].data[flux_ext]
-                #ivar = image[0].data[noise_ext]**(-2)
                 flux = image[flux_ext].data
                 ivar = 1./np.abs(flux)
                 # -------------------------------------------------------------
+
+        elif is_HST_product:
+            # TODO: fix this! Don't know if this is the right way to read S/N for HST
+			logger.info(
+				"Recognized HST product, no noise. Using zero-indexed flux "
+				"extension (bands) {}, Poisson noise".format(flux_ext))
+			# -------------------------------------------------------------
+			# E. Holmbeck changed these two lines for HST data
+			#flux = image[0].data[flux_ext]
+			flux = image[flux_ext].data
+			ivar = flux**(-2)
+			# -------------------------------------------------------------
 
 		# E. Holmbeck added the "try" statement to test for old du Pont data.
 		# Warning: HACKY!

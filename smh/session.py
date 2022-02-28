@@ -783,6 +783,7 @@ class Session(BaseSession):
         self.metadata["rv"]["rv_applied"] = -float(rv)
         
         # -----------------------------------------------------------------
+        '''
         # E. Holmbeck: calculate the bcv if it doesn't exist
         if "barycentric_correction" in self.metadata["rv"]:
             return
@@ -808,7 +809,7 @@ class Session(BaseSession):
                 "Exception in calculating heliocentric and barycentric motions")
             logger.error(e)
             v_helio, v_bary = (np.nan, np.nan)
-
+        
         else:
             try:
                 v_helio = v_helio.to("km/s").value
@@ -827,6 +828,7 @@ class Session(BaseSession):
             "Heliocentric velocity correction: {0:.2f} km/s".format(v_helio))
         logging.info(
             "Barycentric velocity correction: {0:.2f} km/s".format(v_bary))
+        '''
         # -----------------------------------------------------------------
 
         return None
