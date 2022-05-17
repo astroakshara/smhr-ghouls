@@ -344,14 +344,24 @@ class Spectrum1D(object):
 
         elif is_HST_product:
             # TODO: fix this! Don't know if this is the right way to read S/N for HST
-			logger.info(
-				"Recognized HST product, no noise. Using zero-indexed flux "
-				"extension (bands) {}, Poisson noise".format(flux_ext))
-			# -------------------------------------------------------------
-			# E. Holmbeck changed these two lines for HST data
-			#flux = image[0].data[flux_ext]
-			flux = image[flux_ext].data
-			ivar = flux**(-2)
+            flux_ext = flux_ext or 0
+            noise_ext = ivar_ext or 1
+            logger.info("Recognized HST product.".format(flux_ext))
+			
+            # -------------------------------------------------------------
+            # E. Holmbeck changed these two lines for HST data
+            #flux = image[0].data[flux_ext]
+            #import pdb
+            #pdb.set_trace()
+            try:
+                flux = image[0].data[flux_ext]
+                ivar = image[0].data[noise_ext]
+            except IndexError:
+                flux = image[flux_ext].data
+                ivar = flux**(-2)
+                logger.info(
+                    "This HST spectrum has no noise spectrum. Using zero-indexed flux "
+                    "extension (bands) {}, Poisson noise".format(flux_ext))
 			# -------------------------------------------------------------
 
 		# E. Holmbeck added the "try" statement to test for old du Pont data.
