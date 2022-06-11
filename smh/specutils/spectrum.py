@@ -351,9 +351,11 @@ class Spectrum1D(object):
             # -------------------------------------------------------------
             # E. Holmbeck changed these two lines for HST data
             #flux = image[0].data[flux_ext]
+            #import pdb
+            #pdb.set_trace()
             try:
                 flux = image[0].data[flux_ext]
-                ivar = (image[0].data[noise_ext])**-2
+                ivar = image[0].data[noise_ext]
             except IndexError:
                 flux = image[flux_ext].data
                 ivar = flux**(-2)
