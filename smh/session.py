@@ -339,7 +339,7 @@ class Session(BaseSession):
         """
 
         with open(path, 'rb') as fp:
-            spectral_model_states = pickle.load(fp)
+            spectral_model_states = pickle.load(fp,encoding="latin1")
         spectral_models = self.reconstruct_spectral_models(spectral_model_states)
         self.metadata["spectral_models"].extend(spectral_models)
         return len(spectral_models)
@@ -347,8 +347,8 @@ class Session(BaseSession):
     def export_spectral_model_states(self, path):
         # TODO implement mask saving etc.
         states = [_.__getstate__() for _ in self.spectral_models]
-        with open(path, 'w') as fp:
-            pickle.dump(states)
+        with open(path, 'wb') as fp:
+            pickle.dump(states, fp)
         return True
 
     def reconstruct_spectral_models(self, spectral_model_states):
@@ -376,6 +376,9 @@ class Session(BaseSession):
                 raise ValueError("unrecognized spectral model class '{}'"\
                                      .format(state["type"]))
             model = klass(*args)
+            ## python 2/3 issue
+            if "rt_abundances" in state["metadata"].keys():
+                state["metadata"]["rt_abundances"] = utils._fix_bytes_dict(state["metadata"]["rt_abundances"])
             model.metadata.update(state["metadata"])
             reconstructed_spectral_models.append(model)
             t2 = time.time()-start
@@ -420,7 +423,7 @@ class Session(BaseSession):
 
         # Reconstruct the session, starting with the initial paths.
         with open(os.path.join(twd, "session.pkl"), "rb") as fp:
-            metadata = pickle.load(fp)
+            metadata = pickle.load(fp,encoding="latin1")
 
         # Load in the template spectrum.
         template_spectrum_path \
@@ -444,6 +447,10 @@ class Session(BaseSession):
         # Remove any reconstruction paths.
         metadata.pop("reconstruct_paths")
 
+        # Python 2/3
+        if "isotopes" in metadata:
+            metadata["isotopes"] = utils._fix_bytes_dict(metadata["isotopes"])
+        
         # Update the new session with the metadata.
         session.metadata = metadata
         # A hack to maintain backwards compatibility
@@ -555,7 +562,10 @@ class Session(BaseSession):
         except KeyError:
             # Check in defaults.
             with open(self._default_settings_path, "rb") as fp:
-                default = yaml.load(fp)
+                try:
+                    default = yaml.load(fp, yaml.FullLoader)
+                except AttributeError:
+                    default = yaml.load(fp)
 
             try:
                 for key in key_tree:
@@ -583,7 +593,10 @@ class Session(BaseSession):
 
         # Open the defaults.
         with open(self._default_settings_path, "rb") as fp:
-            defaults = yaml.load(fp)
+            try:
+                default = yaml.load(fp, yaml.FullLoader)
+            except AttributeError:
+                default = yaml.load(fp)
 
         branch = defaults
         for key in key_tree[:-1]:
@@ -723,9 +736,8 @@ class Session(BaseSession):
         # Store the measured information as part of the session.
         # TODO: Should we store these as a NamedTuple instead?
 
-        # E. Holmbeck added "shift_tellurics"
         try:
-            v_helio, v_bary, shift_tellurics = specutils.motions.corrections_from_headers(\
+            v_helio, v_bary = specutils.motions.corrections_from_headers(\
                 overlap_order.metadata)
         except Exception as e:
             # TODO not raising an exception for testing purposes, but may want to
@@ -734,7 +746,7 @@ class Session(BaseSession):
             logger.error(
                 "Exception in calculating heliocentric and barycentric motions")
             logger.error(e)
-            v_helio, v_bary, shift_tellurics = (np.nan, np.nan, True)
+            v_helio, v_bary = (np.nan, np.nan)
 
         else:
             try:
@@ -753,8 +765,6 @@ class Session(BaseSession):
             "ccf": ccf,
             "heliocentric_correction": v_helio,
             "barycentric_correction": v_bary,
-            # E. Holmbeck added this
-            "shift_tellurics": shift_tellurics,
 
             # Input settings
             "template_spectrum": template_spectrum,
@@ -783,7 +793,6 @@ class Session(BaseSession):
         self.metadata["rv"]["rv_applied"] = -float(rv)
         
         # -----------------------------------------------------------------
-        '''
         # E. Holmbeck: calculate the bcv if it doesn't exist
         if "barycentric_correction" in self.metadata["rv"]:
             return
@@ -796,12 +805,14 @@ class Session(BaseSession):
                     spectrum = s
                     break
 
-        from astropy.io import fits
-        _, headers = fits.getdata(spectrum, header=True)
-
-        # E. Holmbeck added "shift_tellurics"
         try:
-            v_helio, v_bary, shift_tellurics = specutils.motions.corrections_from_headers(\
+            from astropy.io import fits
+            _, headers = fits.getdata(spectrum, header=True)
+        except OSError as e:
+            print("Failure to read FITS headers, will not have heliocentric/barycentric corrections")
+
+        try:
+            v_helio, v_bary = specutils.motions.corrections_from_headers(\
                 headers)
         
         except Exception as e:
@@ -809,7 +820,7 @@ class Session(BaseSession):
                 "Exception in calculating heliocentric and barycentric motions")
             logger.error(e)
             v_helio, v_bary = (np.nan, np.nan)
-        
+
         else:
             try:
                 v_helio = v_helio.to("km/s").value
@@ -828,7 +839,6 @@ class Session(BaseSession):
             "Heliocentric velocity correction: {0:.2f} km/s".format(v_helio))
         logging.info(
             "Barycentric velocity correction: {0:.2f} km/s".format(v_bary))
-        '''
         # -----------------------------------------------------------------
 
         return None
@@ -1233,7 +1243,7 @@ class Session(BaseSession):
             if model.is_acceptable and isinstance(model, ProfileFittingModel) and (not model.is_upper_limit):
                 eqw_models.append(model)
         
-        all_species = np.unique(map(lambda m: m.species[0], eqw_models))
+        all_species = np.unique(list(map(lambda m: m.species[0], eqw_models)))
         all_ratios = []
         for _s1 in all_species:
             for _s2 in all_species:
@@ -1460,6 +1470,7 @@ class Session(BaseSession):
         """
         
         Teff, logg, vt, MH = self.stellar_parameters
+        alpha = self.metadata["stellar_parameters"]["alpha"]
         initial_guess = [Teff, vt, logg, MH] # stupid me did not change the ordering to match
         logger.info("Initializing optimization at Teff={:.0f} logg={:.2f} vt={:.2f} MH={:.2f}".format(
             Teff, logg, vt, MH))
@@ -1868,7 +1879,10 @@ class Session(BaseSession):
 
     def make_summary_plot(self, figure=None):
         with open(self._default_settings_path, "rb") as fp:
-            defaults = yaml.load(fp)
+            try:
+                default = yaml.load(fp, yaml.FullLoader)
+            except AttributeError:
+                default = yaml.load(fp)
         if "summary_figure" not in defaults:
             raise RuntimeError("Defaults file ({}) must have summary_figure".format(\
                     self._default_settings_path))
@@ -1879,7 +1893,10 @@ class Session(BaseSession):
                                        self.normalized_spectrum, figure)
     def make_ncap_summary_plot(self, figure=None):
         with open(self._default_settings_path, "rb") as fp:
-            defaults = yaml.load(fp)
+            try:
+                default = yaml.load(fp, yaml.FullLoader)
+            except AttributeError:
+                default = yaml.load(fp)
         if "summary_figure_ncap" not in defaults:
             raise RuntimeError("Defaults file ({}) must have summary_figure".format(\
                     self._default_settings_path))
@@ -2003,8 +2020,10 @@ class Session(BaseSession):
 
         master_list = ascii.read(filename, **kwargs).filled()
         logger.debug(master_list)
-        types = np.array(map(lambda x: x.lower(), np.array(master_list["type"])))
-        assert np.all(map(lambda x: (x=="eqw") or (x=="syn") or (x=="list"), types)), types
+        print(master_list["type"])
+        types = np.array(list(map(lambda x: x.lower(), np.array(master_list["type"]))))
+        print(types)
+        assert np.all([(x=="eqw") or (x=="syn") or (x=="list") for x in types]), types
 
         num_added = 0
 
@@ -2062,6 +2081,9 @@ class Session(BaseSession):
                 if elem1 == "C" and elem2 == "N":
                     element = ["N"]
                     logger.debug("Hardcoded element: CN->N")
+                if elem1 == "H" and elem2 == "N":
+                    element = ["N"]
+                    logger.debug("Hardcoded element: NH->N")
             _filename = row["filename"]
             what_wavelength = row['wavelength']
             what_species = [row['species']]
@@ -2129,7 +2151,7 @@ class Session(BaseSession):
                     warnings.warn("Spectral model has multiple species: {}".format(model.species))
                 species = round(model.species[0][0],1)
             # Use setdefault instead of get, not sure why it has to be this way
-	    species_models = all_models.setdefault(species, [])
-	    species_models.append(model)
+            species_models = all_models.setdefault(species, [])
+            species_models.append(model)
         return all_models
     
