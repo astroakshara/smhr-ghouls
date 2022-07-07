@@ -25,7 +25,7 @@ There is not a way to convert files from the old SMH to new SMHR.
 Note about this version
 ------------------------
  - This is a fork of the original SMHr code that has updates and additions for use by the *R*-Process Alliance.
- - Direct questions to Erika Holmbeck (RIT/Notre Dame) or Alex Ji (Carnegie Observatories).
+ - Direct questions to Erika Holmbeck (Carnegie Observatories) or Alex Ji (University of Chicago).
 
 
 Installation
