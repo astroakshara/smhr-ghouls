@@ -758,14 +758,19 @@ class SMHScatterplot(mpl.MPLWidget):
         assert xattr in self.allattrs, xattr
         assert yattr in self.allattrs, yattr
         self.xattr = xattr
-        self.yattr = yattr
+        self.yattr = yattr 
+        # E. Holmbeck skipped this for now.
+        '''       
         if error_styles is not None:
             assert (e_xattr is not None) or (e_yattr is not None), "Must specify e_xattr and/or e_yattr for error_styles"
             assert (exattr is None) or (exattr in self.allattrs), exattr
             assert (eyattr is None) or (eyattr in self.allattrs), eyattr
         self.exattr = exattr
         self.eyattr = eyattr
-
+        '''
+        self.exattr = None
+        self.eyattr = None
+        
         super(SMHScatterplot, self).__init__(parent=parent,
                                              **kwargs)
         
@@ -785,7 +790,7 @@ class SMHScatterplot(mpl.MPLWidget):
             error_styles = [None for f in filters]
         else:
             assert len(filters)==len(error_styles)
-            raise NotImplementedError("Need to implement error bar graphics updating!")
+            #raise NotImplementedError("Need to implement error bar graphics updating!")
         if linefit_styles is None:
             linefit_styles = [None for f in filters]
         else:
@@ -800,6 +805,9 @@ class SMHScatterplot(mpl.MPLWidget):
         error_objs = []
         linefit_objs = []
         linemean_objs = []
+        # E. Holmbeck added shading
+        fillmean_objs = []
+        
         for filt, point_kw, error_kw, linefit_kw, linemean_kw in zip(
                 filters, point_styles, error_styles, linefit_styles, linemean_styles):
             if point_kw is None: point_objs.append(None)
@@ -813,7 +821,8 @@ class SMHScatterplot(mpl.MPLWidget):
                 error_objs.append(
                     self.ax.errorbar(np.nan * np.ones(2), np.nan * np.ones(2),
                                      yerr=np.nan * np.ones((2, 2)),
-                                     fmt=None,zorder=-10,
+                                     fmt='o', # E. Holmbeck changed this.
+                                     zorder=-10,
                                      **error_kw))
             
             if linefit_kw is None: linefit_objs.append(None)
@@ -821,10 +830,15 @@ class SMHScatterplot(mpl.MPLWidget):
                 linefit_objs.append(
                     self.ax.plot([np.nan], [np.nan], **linefit_kw)[0])
             
-            if linemean_kw is None: linemean_objs.append(None)
+            if linemean_kw is None:
+                linemean_objs.append(None)
+                fillmean_objs.append(None)
             else:
                 linemean_objs.append(
                     self.ax.axhline(np.nan, **linemean_kw))
+                # E. Holmbeck added shading
+                fillmean_objs.append(
+                    self.ax.fill_between([0,0],[0,0],[0,0], color=linemean_kw["color"], alpha=0.15, lw=0))
         
         ## Save graphic objects
         self._selected_points = self.ax.scatter([], [],
@@ -835,7 +849,9 @@ class SMHScatterplot(mpl.MPLWidget):
         self._errors = error_objs
         self._linefits = linefit_objs
         self._linemeans = linemean_objs
-        self._graphics = list(zip(self._filters, self._points, self._errors, self._linefits, self._linemeans))
+        # E. Holmbeck added shading
+        self._fillmeans = fillmean_objs
+        self._graphics = list(zip(self._filters, self._points, self._errors, self._linefits, self._linemeans, self._fillmeans))
         
         ## Connect Interactivity
         if enable_zoom:
@@ -857,11 +873,12 @@ class SMHScatterplot(mpl.MPLWidget):
         return QtCore.QSize(10,10)
     def reset(self):
         self._selected_points.set_offsets(np.array([np.nan, np.nan]).T)
-        for filt, point, error, linefit, linemean in self._graphics:
+        for filt, point, error, linefit, linemean, fillmean in self._graphics:
             if point is not None: point.set_offsets(np.array([np.nan, np.nan]).T)
             if error is not None: pass # TODO!!!
             if linefit is not None: linefit.set_data([np.nan],[np.nan])
             if linemean is not None: linemean.set_data([0,1],[np.nan,np.nan])
+            if fillmean is not None: pass # TODO!!!
     def linkToTable(self, tableview):
         """
         view for selection; model for data
@@ -922,11 +939,16 @@ class SMHScatterplot(mpl.MPLWidget):
             x = self._load_value_from_table(ix)
             ix = self._ix(i, self.ycol)
             y = self._load_value_from_table(ix)
-            if self.excol is None: ex = np.nan
+            if self.excol is None:
+                # TODO: Add x-error, which is a function of exattr...
+                ex = np.nan
             else:
                 ix = self._ix(i, self.excol)
                 ex = self._load_value_from_table(ix)
-            if self.eycol is None: ey = np.nan
+            if self.eycol is None:
+                # E. Holmbeck changed; just make sure it's right
+                #ey = np.nan
+                ey = spectral_models[i].abundance_uncertainties
             else:
                 ix = self._ix(i, self.eycol)
                 ey = self._load_value_from_table(ix)
@@ -939,21 +961,38 @@ class SMHScatterplot(mpl.MPLWidget):
         for filt in self._filters:
             valids.append([filt(sm) for sm in spectral_models])
         valids = np.atleast_2d(np.array(valids, dtype=bool))
-        for ifilt,(filt, point, error, linefit, linemean) in enumerate(self._graphics):
+        
+        for ifilt,(filt, point, error, linefit, linemean, fillmean) in enumerate(self._graphics):
             valid = valids[ifilt,:]
             nonzero = valid.sum() > 0
             x, y = xs[valid], ys[valid]
+            # E. Holmbeck added; only works for yerr though
+            ex, ey = exs[valid], eys[valid]
             if point is not None:
                 if nonzero: point.set_offsets(np.array([x,y]).T)
                 else: point.set_offsets(np.array([np.nan,np.nan]).T)
             if error is not None:
                 ## TODO not doing anything with error bars right now
-                pass
+                # E. Holmbeck added this; shamelessly stolen: https://stackoverflow.com/questions/25210723/matplotlib-set-data-for-errorbar-plot
+                ln, (erry_top, erry_bot), (barsy,) = error.lines
+                x_base = x
+                y_base = y
+                yerr_top = y_base + ey
+                yerr_bot = y_base - ey
+                erry_top.set_xdata(x_base)
+                erry_bot.set_xdata(x_base)
+                erry_top.set_ydata(yerr_top)
+                erry_bot.set_ydata(yerr_bot)
+                new_segments_y = [np.array([[x, yt], [x,yb]]) for x, yt, yb in zip(x_base, yerr_top, yerr_bot)]
+                barsy.set_segments(new_segments_y)
+                #pass
             if nonzero and ((linefit is not None) or (linemean is not None)):
                 ## TODO: Figure out how best to save and return info about the lines
                 ## For now, just refitting whenever needed
                 try:
-                    m, b, medy, stdy, stdm, N = utils.fit_line(x, y, None)
+                    #m, b, medy, stdy, stdm, N = utils.fit_line(x, y, None)
+                    # E. Holmbeck; tried... Still need to iron out the kinks.
+                    m, b, medy, stdy, stdm, N = utils.fit_line(x, y, ey)
                 except ValueError as e:
                     return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
                 #xlim = np.array(self.ax.get_xlim())
@@ -966,6 +1005,17 @@ class SMHScatterplot(mpl.MPLWidget):
                     linemean.set_data([0,1], [medy, medy])
                 else:
                     linemean.set_data([0,1], [np.nan, np.nan])
+                # E. Holmbeck added; shamelessly stolen: https://stackoverflow.com/questions/16120801/matplotlib-animate-fill-between-shape
+                if (fillmean is not None):
+                    path = fillmean.get_paths()[0]
+                    y0new = [medy - 2.5*stdy]*2
+                    y1new = [medy + 2.5*stdy]*2
+                    xnew = list(self.ax.get_xlim())
+                    v_x = np.hstack([xnew[0],xnew,xnew[-1],xnew[::-1],xnew[0]])
+                    v_y = np.hstack([y1new[0],y0new,y0new[-1],y1new[::-1],y1new[0]])
+                    vertices = np.vstack([v_x,v_y]).T
+                    path.vertices = vertices
+                
         style_utils.relim_axes(self.ax)
         self.reset_zoom_limits()
         if redraw: self.draw()

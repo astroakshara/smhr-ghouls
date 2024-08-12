@@ -597,7 +597,7 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
     else:
         parameter_ranges["vt"] = (initial_guess[1], initial_guess[1])
 
-    if params_to_optimize[2]:
+    if params_to_optimize[2]: # and not params_to_optimize[4]: # Holmbeck: I think I was trying to say, "Don't optimize logg independently, are you crazy?" But I don't know what "4" is supposed to have been.
         parameter_ranges["logg"] = (0, 5),
     else:
         parameter_ranges["logg"] = (initial_guess[2], initial_guess[2])
@@ -606,7 +606,7 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
         parameter_ranges["[Fe/H]"] = (-5, 0.5)
     else:
         parameter_ranges["[Fe/H]"] = (initial_guess[3], initial_guess[3])
-	
+
     
     # Create a mutable copy for the initial guess
     #solver_guess = []
@@ -647,10 +647,13 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
         abundances = rt.abundance_cog(photosphere,transitions,twd=twd)
         transitions["abundance"] = abundances
         
-        out = utils.equilibrium_state(transitions[idx_I],
+        # E. Holmbeck changed so that dAdREW is w.r.t. FeII
+        out0 = utils.equilibrium_state(transitions[idx_I],
                                       ("expot", "reduced_equivalent_width"))
-        dAdchi = out[26.0]['expot'][0]
-        dAdREW = out[26.0]['reduced_equivalent_width'][0]
+        out1 = utils.equilibrium_state(transitions[idx_II],
+                                      ("expot", "reduced_equivalent_width"))
+        dAdchi = out0[26.0]['expot'][0]
+        dAdREW = out1[26.1]['reduced_equivalent_width'][0]
         dFe = np.mean(abundances[idx_I]) - np.mean(abundances[idx_II])
         # E. Holmbeck changed dM to be w.r.t. FeII abundances.
         dM  = np.mean(abundances[idx_II]) - (feh + solar_composition("Fe"))
@@ -673,7 +676,7 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
         sampled_points = []
         args = (params_to_optimize, sampled_points, total_tolerance, individual_tolerances, 
                 use_nlte_grid)
-	
+
         try:
             results = fsolve(minimisation_function, solver_guess, args=args, fprime=utils.approximate_feh_jacobian,
                              col_deriv=1, epsfcn=0, xtol=1e-10, full_output=1, maxfev=maxfev)
@@ -702,7 +705,13 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
             #ier, mesg = results[-len(sampled_points)/2:]
             ier, mesg = results[-2:]
             
-            final_parameters = (results[0]*params_to_optimize) + (initial_guess*(-1*params_to_optimize + 1))
+            # E. Holmbeck updated this
+            final_parameters = [] #(results[0]*params_to_optimize) + (initial_guess*(-1*params_to_optimize + 1))
+            iter_results = iter(results[0])
+            for pi in range(len(params_to_optimize)):
+            	if params_to_optimize[pi]: final_parameters.append(next(iter_results))
+            	else: final_parameters.append(initial_guess[pi])
+                        
             final_parameters[0] = int(np.round(final_parameters[0])) # Effective temperature
             final_parameters_result = results[1]["fvec"]
             num_moog_iterations = len(sampled_points)

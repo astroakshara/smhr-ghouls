@@ -612,14 +612,20 @@ class StellarParametersTab(QtGui.QWidget):
         linemean_styles = [{"color":"k","linestyle":":","zorder":-999},
                            {"color":"r","linestyle":":","zorder":-999},
                            None,None]
+        # E. Holmbeck added error_styles:
+        error_styles = [{"ms":40,"markerfacecolor":"None","markeredgecolor":"k","ecolor":"k","lw":1},
+                        {"ms":40,"markerfacecolor":"None","markeredgecolor":"k","ecolor":"k","lw":1},
+                        {"ms":70,"markerfacecolor":"none","markeredgecolor":"red","ecolor":"red","lw":3},
+                        {"ms":70,"markerfacecolor":"none","markeredgecolor":"red","ecolor":"red","lw":3},
+                        ]
         self.expotfig = SMHScatterplot(None, "expot", "abundances",
                                        tableview=self.measurement_view,
-                                       filters=filters, point_styles=point_styles,
+                                       filters=filters, point_styles=point_styles, error_styles=error_styles,
                                        linefit_styles=linefit_styles,linemean_styles=linemean_styles,
                                        do_not_select_unacceptable=True)
         self.rewfig = SMHScatterplot(None, "reduced_equivalent_width", "abundances",
                                      tableview=self.measurement_view,
-                                     filters=filters, point_styles=point_styles,
+                                     filters=filters, point_styles=point_styles, error_styles=error_styles,
                                      linefit_styles=linefit_styles,linemean_styles=linemean_styles,
                                      do_not_select_unacceptable=True)
         
