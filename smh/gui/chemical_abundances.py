@@ -1499,6 +1499,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         self.update_fitting_options()
         self.refresh_plots()
         return None
+        
     def clicked_btn_update_abund_table(self,row=None):
         if row is None or not row:
             selected_model = self._get_selected_model()

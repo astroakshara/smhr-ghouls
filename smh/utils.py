@@ -180,11 +180,51 @@ def equilibrium_state(transitions, columns=("expot", "rew"), group_by="species",
 
 
 def fit_line(x, y, yerr=None):
-    if yerr is not None: raise NotImplementedError("Does not fit with error bars yet")
     finite = np.isfinite(x) & np.isfinite(y)
     if finite.sum()==0:
         return np.nan, np.nan, np.nan, np.nan, np.nan, 0
+
     x, y = x[finite], y[finite]
+
+    # E. Holmbeck added
+    if yerr is not None:
+        # E. Holmbeck tried it by hand, but failed.
+        yerr = yerr[finite]
+        not_None = (yerr!=None)
+        # There are still x and y even if the yerr is None..
+        # Also, do we still use xstar when we assume no error on x?
+        yerr = np.array(yerr[not_None], dtype=float)
+        x = x[not_None]
+        y = y[not_None]
+        xbar = np.mean(x)
+        n = float(len(x))
+
+        ((m,b_bar), pcov) = optimize.curve_fit(lambda x,m,b: m*x + b, x-xbar, y, sigma=yerr)
+            
+        m_stderr = pcov[0,0]
+        b = b_bar - m*xbar
+        weights = np.power(yerr,-2)
+        ymean = np.average(y, weights=weights)
+        yvar = np.sqrt(np.average(np.power(y-ymean,2), weights=weights))
+
+        return m, b, ymean, yvar, m_stderr, n
+        '''
+        #raise NotImplementedError("Does not fit with error bars yet")
+        ybar = np.mean(y)
+        sxx = np.sum(np.power(x - xbar, 2))/n
+        syy = np.sum(np.power(y - ybar, 2))/n
+        sxy = np.sum((x-xbar)*(y-ybar))/n
+        delta = np.array(np.power(yerr,2), dtype=float)
+        beta1 = syy - delta*sxx + np.sqrt(np.power(syy-delta*sxx,2) + 4*delta*np.power(sxy,2))
+        beta1 /= 2.*sxy
+        beta0 = ybar - beta1*xbar
+        xstar = x + beta1*(y - beta0 - beta1*x)/(np.power(beta1,2) + delta)
+        #ystar = beta0 + beta1*xstar
+        ystar = beta0 + beta1*x # HERE!
+        m, b_bar, r, p, m_stderr = stats.linregress(x-xbar, ystar) # HERE!
+        b = b_bar - m*xbar
+        '''
+        
     xbar = np.mean(x)
     x = x - xbar
     m, b_bar, r, p, m_stderr = stats.linregress(x, y)
