@@ -402,7 +402,7 @@ class StellarParametersTab(QtGui.QWidget):
 
         # Metallicity.
         label = QtGui.QLabel(self)
-        label.setText("[M/H]")
+        label.setText("[Fe/H]") # E. Holmbeck changed.
         label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
 
         grid_layout.addWidget(label, 2, 0, 1, 1)
@@ -444,11 +444,12 @@ class StellarParametersTab(QtGui.QWidget):
         #grid_layout.addWidget(self.vt_const, 3, 2, -1)
         grid_layout.addWidget(self.vt_const, 3, 2)
 
-        # Nu-max.
+        # Nu-max. WIP
+        '''
         label = QtGui.QLabel(self)
         label.setText("nu-max")
         label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
-        
+        '''
         '''
         grid_layout.addWidget(label, 4, 0, 1, 1)
         self.edit_numax = QtGui.QLineEdit(self)
