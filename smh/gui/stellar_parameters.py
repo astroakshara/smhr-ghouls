@@ -53,6 +53,43 @@ if sys.platform == "darwin":
 _QFONT = QtGui2.QFont("Helvetica Neue", 10)
 _ROWHEIGHT = 20
 
+
+# E. Holmbeck added toggle. Shamelessly stolen from https://stackoverflow.com/questions/56806987/switch-button-in-pyqt
+class MySwitch(QtGui.QPushButton):
+    def __init__(self, parent = None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setMinimumWidth(66)
+        self.setMinimumHeight(22)
+
+    def paintEvent(self, event):
+        label = "Fe I" if not self.isChecked() else "Fe II"
+        bg_color = QtCore.Qt.white if not self.isChecked() else QtCore.Qt.red
+
+        radius = 10
+        width = 25
+        center = self.rect().center()
+
+        painter = QtGui2.QPainter(self)
+        painter.setRenderHint(QtGui2.QPainter.Antialiasing)
+        painter.translate(center)
+        #painter.setBrush(QtGui2.QColor(0,0,0))
+        painter.setBrush(QtCore.Qt.gray)
+
+        pen = QtGui2.QPen(QtCore.Qt.black)
+        pen.setWidth(0)
+        painter.setPen(pen)
+
+        # Draw background rounded box
+        painter.drawRoundedRect(QtCore.QRect(-2*width, -radius, 3*width, 2*radius), radius, radius)
+        painter.setBrush(QtGui2.QBrush(bg_color))
+        sw_rect = QtCore.QRect(-radius, -radius, width + radius, 2*radius)
+        if not self.isChecked():
+            sw_rect.moveLeft(-2*width)
+        painter.drawRoundedRect(sw_rect, radius, radius)
+        painter.drawText(sw_rect, QtCore.Qt.AlignCenter, label)
+
+
 class StellarParametersTab(QtGui.QWidget):
 
 
@@ -345,7 +382,7 @@ class StellarParametersTab(QtGui.QWidget):
         ## use current state as initial guess
         logger.info("Setting [alpha/Fe]=0.4 to solve")
         self.update_stellar_parameter_session()
-        self.parent.session.optimize_feh(self.params_to_optimize)
+        self.parent.session.optimize_feh(self.params_to_optimize, use_FeII=self.toggle_feII.isChecked())
         self.parent.session.metadata["stellar_parameters"]
         ## refresh everything
         # E. Holmbeck added 'new_session' again; trying to fix update problem
@@ -356,11 +393,35 @@ class StellarParametersTab(QtGui.QWidget):
         
     def _init_rt_options(self, parent):
         grid_layout = QtGui.QGridLayout()
+        # E. Holmbeck: toggle for Fe I vs. Fe II
+        '''
+        from qtwidgets import Toggle
+        label = QtGui.QLabel(self)
+        label.setText("Use Fe I")
+        grid_layout.addWidget(label, 0, 0, 1, 1)
+        label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
+        toggle_feII = Toggle()
+        grid_layout.addWidget(toggle_feII, 0, 1)
+        toggle_feII.stateChanged.connect(toggle_feII.setChecked)
+        label = QtGui.QLabel(self)
+        label.setText("Use Fe II")
+        grid_layout.addWidget(label, 0, 2, 1, 1)
+        '''
+        label = QtGui.QLabel(self)
+        label.setText("Use lines for parameters:")
+        label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
+        grid_layout.addWidget(label, 0, 0, 1, 1) #int fromRow, int fromColumn, int rowSpan, int columnSpan, alignment
+        self.toggle_feII = MySwitch()
+        self.toggle_feII.setChecked(True)
+        grid_layout.addWidget(self.toggle_feII, 0, 1, 1, 2)
+        #toggle_feII.clicked.connect(lambda:self.const_param(self.use_FeII,~self.use_FeII))
+        self.toggle_feII.clicked.connect(self.toggle_feII.setChecked(False))
+        
         # Effective temperature.
         label = QtGui.QLabel(self)
         label.setText("Teff")
         label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
-        grid_layout.addWidget(label, 0, 0, 1, 1)
+        grid_layout.addWidget(label, 1, 0, 1, 1)
         self.edit_teff = QtGui.QLineEdit(self)
         self.edit_teff.setMinimumSize(QtCore.QSize(40, 0))
         self.edit_teff.setMaximumSize(QtCore.QSize(50, 16777215))
@@ -369,13 +430,13 @@ class StellarParametersTab(QtGui.QWidget):
         self.edit_teff.setValidator(
             QtGui2.QDoubleValidator(3000, 8000, 0, self.edit_teff))
         self.edit_teff.textChanged.connect(self._check_lineedit_state)
-        grid_layout.addWidget(self.edit_teff, 0, 1)
+        grid_layout.addWidget(self.edit_teff, 1, 1)
         # E. Holmbeck added checkbox
         self.teff_const = QtGui.QCheckBox("Hold constant")
         self.teff_const.setChecked(False)
         self.teff_const.stateChanged.connect(lambda:self.const_param(self.teff_const,0))
         #grid_layout.addWidget(self.teff_const, 0, 2, -1)
-        grid_layout.addWidget(self.teff_const, 0, 2)
+        grid_layout.addWidget(self.teff_const, 1, 2)
         
         
         # Surface gravity.
@@ -383,7 +444,7 @@ class StellarParametersTab(QtGui.QWidget):
         label.setText("logg")
         label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
 
-        grid_layout.addWidget(label, 1, 0, 1, 1)
+        grid_layout.addWidget(label, 2, 0, 1, 1)
         self.edit_logg = QtGui.QLineEdit(self)
         self.edit_logg.setMinimumSize(QtCore.QSize(40, 0))
         self.edit_logg.setMaximumSize(QtCore.QSize(50, 16777215))
@@ -392,20 +453,20 @@ class StellarParametersTab(QtGui.QWidget):
             QtGui2.QDoubleValidator(-1, 6, 3, self.edit_logg))
         self.edit_logg.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
         self.edit_logg.textChanged.connect(self._check_lineedit_state)
-        grid_layout.addWidget(self.edit_logg, 1, 1)
+        grid_layout.addWidget(self.edit_logg, 2, 1)
         # E. Holmbeck added checkbox
         self.logg_const = QtGui.QCheckBox("Hold constant")
         self.logg_const.setChecked(False)
         self.logg_const.stateChanged.connect(lambda:self.const_param(self.logg_const,2))
         #grid_layout.addWidget(self.logg_const, 1, 2, -1)
-        grid_layout.addWidget(self.logg_const, 1, 2)
+        grid_layout.addWidget(self.logg_const, 2, 2)
 
         # Metallicity.
         label = QtGui.QLabel(self)
         label.setText("[Fe/H]") # E. Holmbeck changed.
         label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
 
-        grid_layout.addWidget(label, 2, 0, 1, 1)
+        grid_layout.addWidget(label, 3, 0, 1, 1)
         self.edit_metallicity = QtGui.QLineEdit(self)
         self.edit_metallicity.setMinimumSize(QtCore.QSize(40, 0))
         self.edit_metallicity.setMaximumSize(QtCore.QSize(50, 16777215))
@@ -414,13 +475,13 @@ class StellarParametersTab(QtGui.QWidget):
             QtGui2.QDoubleValidator(-5, 1, 3, self.edit_metallicity))
         self.edit_metallicity.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
         self.edit_metallicity.textChanged.connect(self._check_lineedit_state)
-        grid_layout.addWidget(self.edit_metallicity, 2, 1)
+        grid_layout.addWidget(self.edit_metallicity, 3, 1)
         # E. Holmbeck added checkbox
         self.feh_const = QtGui.QCheckBox("Hold constant")
         self.feh_const.setChecked(False)
         self.feh_const.stateChanged.connect(lambda:self.const_param(self.feh_const,3))
         #grid_layout.addWidget(self.feh_const, 2, 2, -1)
-        grid_layout.addWidget(self.feh_const, 2, 2)
+        grid_layout.addWidget(self.feh_const, 3, 2)
 
 
         # Microturbulence.
@@ -428,7 +489,7 @@ class StellarParametersTab(QtGui.QWidget):
         label.setText("vt")
         label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
 
-        grid_layout.addWidget(label, 3, 0, 1, 1)
+        grid_layout.addWidget(label, 4, 0, 1, 1)
         self.edit_xi = QtGui.QLineEdit(self)
         self.edit_xi.setMinimumSize(QtCore.QSize(40, 0))
         self.edit_xi.setMaximumSize(QtCore.QSize(50, 16777215))
@@ -436,14 +497,14 @@ class StellarParametersTab(QtGui.QWidget):
         self.edit_xi.setValidator(QtGui2.QDoubleValidator(0, 5, 3, self.edit_xi))
         self.edit_xi.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
         self.edit_xi.textChanged.connect(self._check_lineedit_state)
-        grid_layout.addWidget(self.edit_xi, 3, 1)
+        grid_layout.addWidget(self.edit_xi, 4, 1)
         # E. Holmbeck added checkbox
         self.vt_const = QtGui.QCheckBox("Hold constant")
         self.vt_const.setChecked(False)
         self.vt_const.stateChanged.connect(lambda:self.const_param(self.vt_const,1))
         #grid_layout.addWidget(self.vt_const, 3, 2, -1)
-        grid_layout.addWidget(self.vt_const, 3, 2)
-
+        grid_layout.addWidget(self.vt_const, 4, 2)
+   
         # Nu-max. WIP
         '''
         label = QtGui.QLabel(self)

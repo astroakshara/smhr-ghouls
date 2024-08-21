@@ -96,7 +96,7 @@ def feh_optimization(func):
 
     def _decorator(request, *args, **kwargs):
 
-        params_to_optimize, previously_sampled_points, total_tolerance, individual_tolerances, use_nlte_grid = args
+        params_to_optimize, previously_sampled_points, total_tolerance, individual_tolerances, use_nlte_grid, use_FeII = args
 
         previously_sampled_points = np.array(previously_sampled_points)
         
@@ -547,6 +547,7 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
                                 max_attempts=5, total_tolerance=1e-4, 
                                 individual_tolerances=None, 
                                 maxfev=30, use_nlte_grid=None,
+                                use_FeII=False,
                                 ):
     """
     Assumes these are all transitions you want to use for stellar parameters
@@ -625,7 +626,7 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
         stellar_parameters : [teff, vt, logg, feh]
         """
         
-        params_to_optimize, all_sampled_points, total_tolerance, individual_tolerances, use_nlte_grid = args
+        params_to_optimize, all_sampled_points, total_tolerance, individual_tolerances, use_nlte_grid, use_FeII = args
 
         # Old way:
         #teff, vt, logg, feh = [initial_guess[0], stellar_parameters[0], initial_guess[2], stellar_parameters[1]]
@@ -648,12 +649,18 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
         transitions["abundance"] = abundances
         
         # E. Holmbeck changed so that dAdREW is w.r.t. FeII
-        out0 = utils.equilibrium_state(transitions[idx_I],
-                                      ("expot", "reduced_equivalent_width"))
-        out1 = utils.equilibrium_state(transitions[idx_II],
-                                      ("expot", "reduced_equivalent_width"))
-        dAdchi = out0[26.0]['expot'][0]
-        dAdREW = out0[26.0]['reduced_equivalent_width'][0]
+        if use_FeII:
+            out = utils.equilibrium_state(transitions[idx_II],
+                                          ("expot", "reduced_equivalent_width"))
+            species=26.1
+        else:
+            out = utils.equilibrium_state(transitions[idx_I],
+                                          ("expot", "reduced_equivalent_width"))
+            species=26.0
+        logger.info("Using species: {:.1f}".format(species))
+
+        dAdchi = out[species]['expot'][0]
+        dAdREW = out[species]['reduced_equivalent_width'][0]
         dFe = np.mean(abundances[idx_I]) - np.mean(abundances[idx_II])
         # E. Holmbeck changed dM to be w.r.t. FeII abundances.
         dM  = np.mean(abundances[idx_II]) - (feh + solar_composition("Fe"))
@@ -675,7 +682,7 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
     for i in range(1, 1 + max_attempts):
         sampled_points = []
         args = (params_to_optimize, sampled_points, total_tolerance, individual_tolerances, 
-                use_nlte_grid)
+                use_nlte_grid, use_FeII)
 
         try:
             results = fsolve(minimisation_function, solver_guess, args=args, fprime=utils.approximate_feh_jacobian,
