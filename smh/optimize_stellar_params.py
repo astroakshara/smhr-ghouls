@@ -653,7 +653,7 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
         out1 = utils.equilibrium_state(transitions[idx_II],
                                       ("expot", "reduced_equivalent_width"))
         dAdchi = out0[26.0]['expot'][0]
-        dAdREW = out1[26.1]['reduced_equivalent_width'][0]
+        dAdREW = out0[26.0]['reduced_equivalent_width'][0]
         dFe = np.mean(abundances[idx_I]) - np.mean(abundances[idx_II])
         # E. Holmbeck changed dM to be w.r.t. FeII abundances.
         dM  = np.mean(abundances[idx_II]) - (feh + solar_composition("Fe"))
