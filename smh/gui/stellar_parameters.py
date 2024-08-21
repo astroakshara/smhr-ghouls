@@ -836,7 +836,7 @@ class StellarParameterUncertaintiesDialog(QtGui.QDialog):
         
         self.label_Teff.setText("Teff={:.0f}".format(Teff))
         self.label_logg.setText("logg={:.2f}".format(logg))
-        self.label_MH.setText("[M/H]={:.2f}".format(MH))
+        self.label_MH.setText("[Fe/H]={:.2f}".format(MH))
         self.label_vt.setText("vt={:.2f}".format(vt))
         
         self.label_staterr_Teff.setText("{:.0f}".format(stat_Teff))
