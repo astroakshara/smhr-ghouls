@@ -400,11 +400,10 @@ class StellarParametersTab(QtGui.QWidget):
         self.toggle_feII = MySwitch()
         self.toggle_feII.setChecked(True)
         grid_layout.addWidget(self.toggle_feII, 0, 0, 1, 3)#, alignment=QtCore.Qt.AlignCenter)
-        #toggle_feII.clicked.connect(lambda:self.const_param(self.use_FeII,~self.use_FeII))
         self.toggle_feII.clicked.connect(self.toggle_feII.setChecked(False))
         label = QtGui.QLabel(self)
         label.setText("Hold?")
-        grid_layout.addWidget(label, 0, 1, 1, 2, alignment=QtCore.Qt.AlignRight)
+        grid_layout.addWidget(label, 0, 2, 1, 1)
         self.line = QtGui.QFrame()
         self.line.setFrameShape(QtGui.QFrame.HLine)
         self.line.setFrameShadow(QtGui.QFrame.Sunken)
@@ -430,7 +429,6 @@ class StellarParametersTab(QtGui.QWidget):
         self.teff_const = QtGui.QCheckBox()
         self.teff_const.setChecked(False)
         self.teff_const.stateChanged.connect(lambda:self.const_param(self.teff_const,0))
-        #grid_layout.addWidget(self.teff_const, 0, 2, -1)
         grid_layout.addWidget(self.teff_const, 1, 2, alignment=QtCore.Qt.AlignCenter)
         
         
