@@ -392,30 +392,25 @@ class StellarParametersTab(QtGui.QWidget):
         
         
     def _init_rt_options(self, parent):
-        grid_layout = QtGui.QGridLayout()
         # E. Holmbeck: toggle for Fe I vs. Fe II
-        '''
-        from qtwidgets import Toggle
+        grid_layout = QtGui.QGridLayout()
         label = QtGui.QLabel(self)
-        label.setText("Use Fe I")
-        grid_layout.addWidget(label, 0, 0, 1, 1)
-        label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
-        toggle_feII = Toggle()
-        grid_layout.addWidget(toggle_feII, 0, 1)
-        toggle_feII.stateChanged.connect(toggle_feII.setChecked)
-        label = QtGui.QLabel(self)
-        label.setText("Use Fe II")
-        grid_layout.addWidget(label, 0, 2, 1, 1)
-        '''
-        label = QtGui.QLabel(self)
-        label.setText("Use lines for parameters:")
-        label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
+        label.setText("Use lines for parameters")
         grid_layout.addWidget(label, 0, 0, 1, 1) #int fromRow, int fromColumn, int rowSpan, int columnSpan, alignment
         self.toggle_feII = MySwitch()
         self.toggle_feII.setChecked(True)
-        grid_layout.addWidget(self.toggle_feII, 0, 1, 1, 2)
+        grid_layout.addWidget(self.toggle_feII, 0, 0, 1, 3)#, alignment=QtCore.Qt.AlignCenter)
         #toggle_feII.clicked.connect(lambda:self.const_param(self.use_FeII,~self.use_FeII))
         self.toggle_feII.clicked.connect(self.toggle_feII.setChecked(False))
+        label = QtGui.QLabel(self)
+        label.setText("Hold?")
+        grid_layout.addWidget(label, 0, 1, 1, 2, alignment=QtCore.Qt.AlignRight)
+        self.line = QtGui.QFrame()
+        self.line.setFrameShape(QtGui.QFrame.HLine)
+        self.line.setFrameShadow(QtGui.QFrame.Sunken)
+        spacer = QtGui.QSpacerItem(QtGui.QSizePolicy.MinimumExpanding, 30)
+        grid_layout.addItem(spacer, 0, 0, 1, 3)
+        grid_layout.addWidget(self.line, 0, 0, 1, 3, alignment=QtCore.Qt.AlignBottom)
         
         # Effective temperature.
         label = QtGui.QLabel(self)
@@ -432,11 +427,11 @@ class StellarParametersTab(QtGui.QWidget):
         self.edit_teff.textChanged.connect(self._check_lineedit_state)
         grid_layout.addWidget(self.edit_teff, 1, 1)
         # E. Holmbeck added checkbox
-        self.teff_const = QtGui.QCheckBox("Hold constant")
+        self.teff_const = QtGui.QCheckBox()
         self.teff_const.setChecked(False)
         self.teff_const.stateChanged.connect(lambda:self.const_param(self.teff_const,0))
         #grid_layout.addWidget(self.teff_const, 0, 2, -1)
-        grid_layout.addWidget(self.teff_const, 1, 2)
+        grid_layout.addWidget(self.teff_const, 1, 2, alignment=QtCore.Qt.AlignCenter)
         
         
         # Surface gravity.
@@ -455,15 +450,15 @@ class StellarParametersTab(QtGui.QWidget):
         self.edit_logg.textChanged.connect(self._check_lineedit_state)
         grid_layout.addWidget(self.edit_logg, 2, 1)
         # E. Holmbeck added checkbox
-        self.logg_const = QtGui.QCheckBox("Hold constant")
+        self.logg_const = QtGui.QCheckBox()#"Hold constant")
         self.logg_const.setChecked(False)
         self.logg_const.stateChanged.connect(lambda:self.const_param(self.logg_const,2))
         #grid_layout.addWidget(self.logg_const, 1, 2, -1)
-        grid_layout.addWidget(self.logg_const, 2, 2)
+        grid_layout.addWidget(self.logg_const, 2, 2, alignment=QtCore.Qt.AlignCenter)
 
         # Metallicity.
         label = QtGui.QLabel(self)
-        label.setText("[Fe/H]") # E. Holmbeck changed.
+        label.setText("[M/H]")
         label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
 
         grid_layout.addWidget(label, 3, 0, 1, 1)
@@ -477,11 +472,11 @@ class StellarParametersTab(QtGui.QWidget):
         self.edit_metallicity.textChanged.connect(self._check_lineedit_state)
         grid_layout.addWidget(self.edit_metallicity, 3, 1)
         # E. Holmbeck added checkbox
-        self.feh_const = QtGui.QCheckBox("Hold constant")
+        self.feh_const = QtGui.QCheckBox()
         self.feh_const.setChecked(False)
         self.feh_const.stateChanged.connect(lambda:self.const_param(self.feh_const,3))
         #grid_layout.addWidget(self.feh_const, 2, 2, -1)
-        grid_layout.addWidget(self.feh_const, 3, 2)
+        grid_layout.addWidget(self.feh_const, 3, 2, alignment=QtCore.Qt.AlignCenter)
 
 
         # Microturbulence.
@@ -499,11 +494,11 @@ class StellarParametersTab(QtGui.QWidget):
         self.edit_xi.textChanged.connect(self._check_lineedit_state)
         grid_layout.addWidget(self.edit_xi, 4, 1)
         # E. Holmbeck added checkbox
-        self.vt_const = QtGui.QCheckBox("Hold constant")
+        self.vt_const = QtGui.QCheckBox()
         self.vt_const.setChecked(False)
         self.vt_const.stateChanged.connect(lambda:self.const_param(self.vt_const,1))
         #grid_layout.addWidget(self.vt_const, 3, 2, -1)
-        grid_layout.addWidget(self.vt_const, 4, 2)
+        grid_layout.addWidget(self.vt_const, 4, 2, alignment=QtCore.Qt.AlignCenter)
    
         # Nu-max. WIP
         '''
@@ -898,7 +893,7 @@ class StellarParameterUncertaintiesDialog(QtGui.QDialog):
         
         self.label_Teff.setText("Teff={:.0f}".format(Teff))
         self.label_logg.setText("logg={:.2f}".format(logg))
-        self.label_MH.setText("[Fe/H]={:.2f}".format(MH))
+        self.label_MH.setText("[M/H]={:.2f}".format(MH))
         self.label_vt.setText("vt={:.2f}".format(vt))
         
         self.label_staterr_Teff.setText("{:.0f}".format(stat_Teff))
