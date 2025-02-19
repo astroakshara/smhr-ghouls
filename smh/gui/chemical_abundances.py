@@ -43,7 +43,7 @@ if sys.platform == "darwin":
         QtGui2.QFont.insertSubstitution(*substitute)
 
 _QFONT = QtGui2.QFont("Helvetica Neue", 10)
-_ROWHEIGHT = 20
+_ROWHEIGHT = 30
 DOUBLE_CLICK_INTERVAL = 0.1 # MAGIC HACK
 PICKER_TOLERANCE = 10 # MAGIC HACK
 
@@ -741,6 +741,8 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         box = self.filter_combo_box
         box.clear()
         box.addItem("All")
+        box.addItem("Synthesized Lines")
+        box.addItem("EW Lines")
 
         all_species = set([])
         for spectral_model in self.full_measurement_model.spectral_models:
@@ -756,6 +758,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             assert species == utils.element_to_species(elem)
             box.addItem(elem)
 
+    # E. Holmbeck added filters for Synth and EW
     def filter_combo_box_changed(self):
         elem = self.filter_combo_box.currentText()
         # Update the filter
@@ -768,8 +771,20 @@ class ChemicalAbundancesTab(QtGui.QWidget):
                 logger.debug(e)
                 logger.debug(self.measurement_model.filter_functions)
                 raise            
-        if elem in [None, "", "All"]:
+        if elem in [None, "", "All", "None"]:
             self.element_summary_text.setText("")
+        elif elem == "Synthesized Lines":
+            self.element_summary_text.setText("")
+            def filter_function(model):
+                if isinstance(model, SpectralSynthesisModel):
+                    return model.species
+            self.measurement_model.add_filter_function(elem, filter_function)
+        elif elem == "EW Lines":
+            self.element_summary_text.setText("")
+            def filter_function(model):
+                if isinstance(model, ProfileFittingModel):
+                    return model.species
+            self.measurement_model.add_filter_function(elem, filter_function)
         else:
             species = utils.element_to_species(elem)
             def filter_function(model):
@@ -778,7 +793,8 @@ class ChemicalAbundancesTab(QtGui.QWidget):
                 elif isinstance(model, SpectralSynthesisModel):
                     return np.any([species in specie for specie in model.species])
             self.measurement_model.add_filter_function(elem, filter_function)
-        self._currently_plotted_element = elem
+        if elem not in ["Synthezized Lines", "EW Lines"]:
+            self._currently_plotted_element = elem
         self.measurement_model.endResetModel()
         self.summarize_current_table()
         self.refresh_plots()
@@ -794,12 +810,26 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             return np.nan
         return self.FeH
 
+    # E. Holmbeck added the synth and ew lines; TODO: make less hacky
     def summarize_current_table(self):
         elem = self.filter_combo_box.currentText()
         if elem is None or elem == "" or elem == "All":
             N = self.measurement_model.rowCount()
             self.element_summary_text.setText("N={} lines".format(N))
             return None
+        elif elem == "Synthesized Lines":
+            filtered = []
+            for line in self.parent.session.spectral_models:
+                if line.measurement_type == "syn": filtered.append(line)
+            self.element_summary_text.setText("N={} lines".format(len(filtered)))
+            return None
+        elif elem == "EW Lines":
+            filtered = []
+            for line in self.parent.session.spectral_models:
+                if line.measurement_type == "eqw": filtered.append(line)
+            self.element_summary_text.setText("N={} lines".format(len(filtered)))
+            return None
+        
         summary_dict = self.parent.session.summarize_spectral_models(organize_by_element=False)
         species = utils.element_to_species(elem)
         if species not in summary_dict:

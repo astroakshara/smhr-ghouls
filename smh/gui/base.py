@@ -125,7 +125,6 @@ class SMHSpecDisplay(mpl.MPLWidget):
         self.session = session
         self.label_ymin = label_ymin
         self.label_ymax = label_ymax
-        
         # E. Holmbeck changed colors:
         self.acceptable_color = "#d92653"
         self.unacceptable_color = "#37ae91"
@@ -754,6 +753,7 @@ class SMHScatterplot(mpl.MPLWidget):
                  error_styles=None,
                  linefit_styles=None,
                  linemean_styles=None,
+                 sigma=2.5,
                  **kwargs):
         assert xattr in self.allattrs, xattr
         assert yattr in self.allattrs, yattr
@@ -770,6 +770,7 @@ class SMHScatterplot(mpl.MPLWidget):
         '''
         self.exattr = None
         self.eyattr = None
+        self.sigma = sigma
         
         super(SMHScatterplot, self).__init__(parent=parent,
                                              **kwargs)
@@ -838,7 +839,7 @@ class SMHScatterplot(mpl.MPLWidget):
                     self.ax.axhline(np.nan, **linemean_kw))
                 # E. Holmbeck added shading
                 fillmean_objs.append(
-                    self.ax.fill_between([0,0],[0,0],[0,0], color=linemean_kw["color"], alpha=0.15, lw=0))
+                    self.ax.fill_between([0,0],[0,0],[0,0], color=linemean_kw["color"], alpha=0.10, lw=0))
         
         ## Save graphic objects
         self._selected_points = self.ax.scatter([], [],
@@ -1008,13 +1009,17 @@ class SMHScatterplot(mpl.MPLWidget):
                 # E. Holmbeck added; shamelessly stolen: https://stackoverflow.com/questions/16120801/matplotlib-animate-fill-between-shape
                 if (fillmean is not None):
                     path = fillmean.get_paths()[0]
-                    y0new = [medy - 2.5*stdy]*2
-                    y1new = [medy + 2.5*stdy]*2
+                    y0new = [medy - self.sigma*stdy]*2
+                    y1new = [medy + self.sigma*stdy]*2
+                    #import pdb
+                    #pdb.set_trace()
+                    #self.edit_sigma.text()
                     xnew = list(self.ax.get_xlim())
                     v_x = np.hstack([xnew[0],xnew,xnew[-1],xnew[::-1],xnew[0]])
                     v_y = np.hstack([y1new[0],y0new,y0new[-1],y1new[::-1],y1new[0]])
                     vertices = np.vstack([v_x,v_y]).T
                     path.vertices = vertices
+                    self.ax.set_ylim(*[1.2*lim for lim in self.ax.get_ylim()])
                 
         style_utils.relim_axes(self.ax)
         self.reset_zoom_limits()

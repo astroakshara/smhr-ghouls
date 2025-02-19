@@ -47,7 +47,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
             self.open_session(session_path)
 
         self.setObjectName("smh")
-        self.resize(1200, 600)
+        self.resize(1200, 900)
         desktop = QtGui.QApplication.desktop()
         self.move(desktop.screen().rect().center() - self.rect().center())
 

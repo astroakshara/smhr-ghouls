@@ -324,6 +324,8 @@ class StellarParametersTab(QtGui.QWidget):
         self.state_fe2_dAdREW.setText(u"{:.3f} ± {:.3f}".format(mREW2, emREW2))
         return None
     def refresh_plots(self):
+        self.expotfig.sigma = float(self.edit_sigma.text())
+        self.rewfig.sigma = float(self.edit_sigma.text())
         self.expotfig.update_scatterplot(False)
         self.rewfig.update_scatterplot(False)
         self.expotfig.update_selected_points(True)
@@ -383,7 +385,7 @@ class StellarParametersTab(QtGui.QWidget):
         logger.info("Setting [alpha/Fe]=0.4 to solve")
         self.update_stellar_parameter_session()
         self.parent.session.optimize_feh(self.params_to_optimize, use_FeII=self.toggle_feII.isChecked())
-        self.parent.session.metadata["stellar_parameters"]
+        #self.parent.session.metadata["stellar_parameters"]
         ## refresh everything
         # E. Holmbeck added 'new_session' again; trying to fix update problem
         self.new_session_loaded()
@@ -536,13 +538,31 @@ class StellarParametersTab(QtGui.QWidget):
         self.edit_alpha.textChanged.connect(self._check_lineedit_state)
         grid_layout.addWidget(self.edit_alpha, 5, 1)
 
+
+        # Sigma plotting
+        label = QtGui.QLabel(self)
+        label.setText("Sigma to plot")
+        label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
+        
+        grid_layout.addWidget(label, 6, 0, 1, 1)
+        self.edit_sigma = QtGui.QLineEdit(self)
+        self.edit_sigma.setMinimumSize(QtCore.QSize(40, 0))
+        self.edit_sigma.setMaximumSize(QtCore.QSize(50, 16777215))
+        self.edit_sigma.setAlignment(QtCore.Qt.AlignCenter)
+        self.edit_sigma.setValidator(QtGui2.QDoubleValidator(0, 5, 2, self.edit_sigma))
+        self.edit_sigma.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
+        self.edit_sigma.textChanged.connect(self._check_lineedit_state)
+        grid_layout.addWidget(self.edit_sigma, 6, 1)
+        self.edit_sigma.setText("2.5")
+
         self.edit_teff.returnPressed.connect(self.measure_abundances)
         self.edit_logg.returnPressed.connect(self.measure_abundances)
         self.edit_metallicity.returnPressed.connect(self.measure_abundances)
         self.edit_xi.returnPressed.connect(self.measure_abundances)
         #self.edit_numax.returnPressed.connect(self.measure_abundances)
         self.edit_alpha.returnPressed.connect(self.measure_abundances)
-
+        self.edit_sigma.returnPressed.connect(self.refresh_plots)
+        
         return grid_layout
     def _init_rt_buttons(self, parent):
         # Buttons for solving/measuring. 
@@ -677,12 +697,12 @@ class StellarParametersTab(QtGui.QWidget):
                                        tableview=self.measurement_view,
                                        filters=filters, point_styles=point_styles, error_styles=error_styles,
                                        linefit_styles=linefit_styles,linemean_styles=linemean_styles,
-                                       do_not_select_unacceptable=True)
+                                       do_not_select_unacceptable=True, sigma=2.5)
         self.rewfig = SMHScatterplot(None, "reduced_equivalent_width", "abundances",
                                      tableview=self.measurement_view,
                                      filters=filters, point_styles=point_styles, error_styles=error_styles,
                                      linefit_styles=linefit_styles,linemean_styles=linemean_styles,
-                                     do_not_select_unacceptable=True)
+                                     do_not_select_unacceptable=True, sigma=2.5)
         
         sp = QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, 
                                QtGui.QSizePolicy.MinimumExpanding)

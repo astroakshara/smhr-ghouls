@@ -887,6 +887,24 @@ class NormalizationTab(QtGui.QWidget):
 
         return None
 
+    # E. Holmbeck added this so the masks aren't overwritten in RPA data
+    def update_rv_applied_keep_masks(self, rv_diff):
+        """
+        Make updates to the view when the radial velocity applied has been
+        updated. Keep masks.
+        """
+
+        global c
+        for N in range(len(self.parent.session.input_spectra)):
+            self.parent.session.metadata["normalization"]['normalization_kwargs'][N]['exclude'] *= 1.0 + rv_diff/c
+
+        # Update the current order fit, and the view.
+        self.update_order_index()
+        self.draw_order(refresh=False)
+        self.draw_continuum(refresh=True)
+
+        return None
+
 
 
     def update_continuum_mask(self, refresh=False):

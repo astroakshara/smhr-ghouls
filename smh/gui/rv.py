@@ -772,6 +772,8 @@ class RVTab(QtGui.QWidget):
         Correct the radial velocity of the observed spectra.
         """
 
+        rv_diff = np.float(self.rv_applied.text()) + np.float(self.parent.session.metadata["rv"]["rv_applied"])
+        
         self.parent.session.rv_correct(self.rv_applied.text())
 
         # Redshift the normalized order.
@@ -779,7 +781,8 @@ class RVTab(QtGui.QWidget):
 
         # Enable and update the normalization tab.
         self.parent.tabs.setTabEnabled(self.parent.tabs.indexOf(self) + 1, True)
-        self.parent.normalization_tab.update_rv_applied()
+        # New function E. Holmbeck added to keep masks
+        self.parent.normalization_tab.update_rv_applied_keep_masks(rv_diff)
 
         # Enable relevant menu actions.
         self.parent._action_fit_balmer_lines.setEnabled(True)
