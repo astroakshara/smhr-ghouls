@@ -763,7 +763,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         elem = self.filter_combo_box.currentText()
         # Update the filter
         self.measurement_model.beginResetModel()
-        if self._currently_plotted_element not in ["All", "", "None"]:
+        if self._currently_plotted_element not in [None, "All", "", "None"]:
             try:
                 self.measurement_model.delete_filter_function(self._currently_plotted_element)
             except KeyError as e:
@@ -793,8 +793,8 @@ class ChemicalAbundancesTab(QtGui.QWidget):
                 elif isinstance(model, SpectralSynthesisModel):
                     return np.any([species in specie for specie in model.species])
             self.measurement_model.add_filter_function(elem, filter_function)
-        if elem not in ["Synthezized Lines", "EW Lines"]:
-            self._currently_plotted_element = elem
+
+        self._currently_plotted_element = elem
         self.measurement_model.endResetModel()
         self.summarize_current_table()
         self.refresh_plots()
