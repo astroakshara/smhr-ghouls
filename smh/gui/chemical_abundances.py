@@ -932,7 +932,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         return None
 
     def fit_none(self, spectral_model):
-        if isinstance(spectral_model, SpectralSynthesisModel): return
+        if not isinstance(spectral_model, SpectralSynthesisModel): return
         # E. Holmbeck added a "none" line
         extra_abundances = self.synth_abund_table_model.get_extra_abundances()
         if extra_abundances is None:
