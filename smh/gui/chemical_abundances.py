@@ -1599,9 +1599,9 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         if not skip_message:
             num_models = 0
             for sm in self.parent.session.metadata.get("spectral_models", []):
-                if sm.is_acceptable: num_models += 1
+                if isinstance(sm, SpectralSynthesisModel) and sm.is_acceptable: num_models += 1
             
-            time_estimate = num_models * 2.0
+            time_estimate = num_models * 7
             if time_estimate >= 60:
                 units = "minutes"
                 time_estimate /= 60
@@ -1615,12 +1615,13 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             if not reply==QtGui.QMessageBox.Yes:
                 return None
 
+        start_time = time.time()
         logger.info("Re-fitting all synth lines.")
         # TODO: HACKY!
         row_count = -1
         for sm in self.parent.session.metadata.get("spectral_models", []):
             row_count+=1
-            if isinstance(sm, SpectralSynthesisModel): continue
+            if not isinstance(sm, SpectralSynthesisModel): continue
             if sm.is_acceptable!=self.acceptables_only: continue
             #self.update_spectrum_figure(redraw=True)
             logger.info("Re-fitting {:} at {:.1f}.".format(sm.elements[0], sm.wavelength))
@@ -1639,15 +1640,26 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             self.fit_none(sm)
             #self.figure.draw()
         
+        end_time = time.time()
+        duration = end_time - start_time
+        minutes,seconds = divmod(duration,60)
+        time_string = ''
+        if minutes > 0:
+            time_string += f"{minutes:.0f} minutes and "
+        time_string += f"{np.around(seconds,0):.0f} seconds"
+        
+        QtGui.QMessageBox.information(self,
+            "Done!", f"Done! That took {time_string:}.")
+        
         self.acceptables_only = True
         return None
 
     def clicked_fit_rest_synth(self):
         num_models = 0
         for sm in self.parent.session.metadata.get("spectral_models", []):
-            if not sm.is_acceptable: num_models += 1
+            if not sm.is_acceptable and isinstance(sm, SpectralSynthesisModel): num_models += 1
         
-        time_estimate = num_models * 2.5
+        time_estimate = num_models * 7
         if time_estimate >= 60:
             units = "minutes"
             time_estimate /= 60
