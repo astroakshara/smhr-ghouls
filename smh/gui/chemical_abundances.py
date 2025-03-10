@@ -603,10 +603,6 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             self.clicked_checkbox_upper_limit)
         self.btn_fit_one.clicked.connect(
             self.fit_one)
-        self.btn_fit_all_synth.clicked.connect(
-            self.clicked_fit_all_synth)
-        self.btn_fit_rest_synth.clicked.connect(
-            self.clicked_fit_rest_synth)
         self.btn_clear_masks.clicked.connect(
             self.clicked_btn_clear_masks)
         self._profile_signals = [
@@ -636,8 +632,6 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             (self.edit_wavelength_tolerance.returnPressed,self.fit_one),
             (self.checkbox_upper_limit.stateChanged,self.clicked_checkbox_upper_limit),
             (self.btn_fit_one.clicked,self.fit_one),
-            (self.btn_fit_all_synth.clicked,self.clicked_fit_all_synth),
-            (self.btn_fit_rest_synth.clicked,self.clicked_fit_rest_synth),
             (self.btn_clear_masks.clicked,self.clicked_btn_clear_masks)
             ]
 
@@ -820,13 +814,13 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         elif elem == "Synthesized Lines":
             filtered = []
             for line in self.parent.session.spectral_models:
-                if line.measurement_type == "syn": filtered.append(line)
+                if isinstance(line, SpectralSynthesisModel): filtered.append(line)
             self.element_summary_text.setText("N={} lines".format(len(filtered)))
             return None
         elif elem == "EW Lines":
             filtered = []
             for line in self.parent.session.spectral_models:
-                if line.measurement_type == "eqw": filtered.append(line)
+                if isinstance(line, ProfileFittingModel): filtered.append(line)
             self.element_summary_text.setText("N={} lines".format(len(filtered)))
             return None
         
@@ -938,7 +932,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         return None
 
     def fit_none(self, spectral_model):
-        if spectral_model.measurement_type != 'syn': return
+        if isinstance(spectral_model, SpectralSynthesisModel): return
         # E. Holmbeck added a "none" line
         extra_abundances = self.synth_abund_table_model.get_extra_abundances()
         if extra_abundances is None:
@@ -1601,13 +1595,32 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         return
     
     # E. Holmbeck added
-    def clicked_fit_all_synth(self):
-        logger.info("Re-fitting all synth lines. This might take a while!")
-        # HACKY!
+    def clicked_fit_all_synth(self, skip_message=False):
+        if not skip_message:
+            num_models = 0
+            for sm in self.parent.session.metadata.get("spectral_models", []):
+                if sm.is_acceptable: num_models += 1
+            
+            time_estimate = num_models * 2.0
+            if time_estimate >= 60:
+                units = "minutes"
+                time_estimate /= 60
+            else: units = "seconds"
+
+            reply = QtGui.QMessageBox.question(self, "Warning!", 
+                f"Are you sure you want to re-synthesize all {num_models:.0f} acceptable lines?"\
+                + f" This will take about {np.around(time_estimate,0):.0f} {units:}.", 
+                QtGui.QMessageBox.Yes, QtGui.QMessageBox.No)
+    
+            if not reply==QtGui.QMessageBox.Yes:
+                return None
+
+        logger.info("Re-fitting all synth lines.")
+        # TODO: HACKY!
         row_count = -1
         for sm in self.parent.session.metadata.get("spectral_models", []):
             row_count+=1
-            if sm.measurement_type != 'syn': continue
+            if isinstance(sm, SpectralSynthesisModel): continue
             if sm.is_acceptable!=self.acceptables_only: continue
             #self.update_spectrum_figure(redraw=True)
             logger.info("Re-fitting {:} at {:.1f}.".format(sm.elements[0], sm.wavelength))
@@ -1630,8 +1643,29 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         return None
 
     def clicked_fit_rest_synth(self):
+        num_models = 0
+        for sm in self.parent.session.metadata.get("spectral_models", []):
+            if not sm.is_acceptable: num_models += 1
+        
+        time_estimate = num_models * 2.5
+        if time_estimate >= 60:
+            units = "minutes"
+            time_estimate /= 60
+        else: units = "seconds"
+        
+        line_or_lines = 's' if num_models>0 else ''
+
+        reply = QtGui.QMessageBox.question(self, "Warning!", 
+            f"You have chosen to synthesize {num_models:.0f} remaining line{line_or_lines:}."\
+            + f" This will take about {np.around(time_estimate,0):.0f} {units:}. Continue?", 
+            QtGui.QMessageBox.Yes, QtGui.QMessageBox.No)
+        if not reply==QtGui.QMessageBox.Yes:
+            return None
+
+        logger.info("Re-fitting all synth lines.")
         self.acceptables_only = False
-        self.clicked_fit_all_synth()
+        self.clicked_fit_all_synth(skip_message=True)
+    
     
     def refresh_current_model(self):
         spectral_model, proxy_index, index = self._get_selected_model(True)
