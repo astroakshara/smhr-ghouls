@@ -1601,7 +1601,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             for sm in self.parent.session.metadata.get("spectral_models", []):
                 if isinstance(sm, SpectralSynthesisModel) and sm.is_acceptable: num_models += 1
             
-            time_estimate = num_models * 7
+            time_estimate = num_models * 10.0
             if time_estimate >= 60:
                 units = "minutes"
                 time_estimate /= 60
@@ -1609,7 +1609,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
 
             reply = QtGui.QMessageBox.question(self, "Warning!", 
                 f"Are you sure you want to re-synthesize all {num_models:.0f} acceptable lines?"\
-                + f" This will take about {np.around(time_estimate,0):.0f} {units:}.", 
+              + f" This will take about {np.around(time_estimate,0):.0f} {units:}, but this may be faster or slower depending on your machine.", 
                 QtGui.QMessageBox.Yes, QtGui.QMessageBox.No)
     
             if not reply==QtGui.QMessageBox.Yes:
@@ -1659,7 +1659,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         for sm in self.parent.session.metadata.get("spectral_models", []):
             if not sm.is_acceptable and isinstance(sm, SpectralSynthesisModel): num_models += 1
         
-        time_estimate = num_models * 7
+        time_estimate = num_models * 10.0
         if time_estimate >= 60:
             units = "minutes"
             time_estimate /= 60
@@ -1669,7 +1669,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
 
         reply = QtGui.QMessageBox.question(self, "Warning!", 
             f"You have chosen to synthesize {num_models:.0f} remaining line{line_or_lines:}."\
-            + f" This will take about {np.around(time_estimate,0):.0f} {units:}. Continue?", 
+            + f" This will take about {np.around(time_estimate,0):.0f} {units:}, but this may be faster or slower depending on your machine. Continue?", 
             QtGui.QMessageBox.Yes, QtGui.QMessageBox.No)
         if not reply==QtGui.QMessageBox.Yes:
             return None
