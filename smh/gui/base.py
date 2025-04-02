@@ -371,7 +371,7 @@ class SMHSpecDisplay(mpl.MPLWidget):
         self.ax_spectrum.set_ylim(ylim)
         self.draw()
         return None
-	    
+        
     def spectrum_left_mouse_press(self, event):
         """
         Listener for if mouse button pressed in spectrum or residual axis
@@ -768,8 +768,12 @@ class SMHScatterplot(mpl.MPLWidget):
         self.exattr = exattr
         self.eyattr = eyattr
         '''
-        self.exattr = None
-        self.eyattr = None
+        if error_styles is not None:
+            self.exattr = exattr
+            self.eyattr = eyattr
+        else:
+            self.exattr = None
+            self.eyattr = None
         self.sigma = sigma
         
         super(SMHScatterplot, self).__init__(parent=parent,
@@ -868,6 +872,21 @@ class SMHScatterplot(mpl.MPLWidget):
         self.update_scatterplot()
         self.update_selected_points(True)
 
+    '''
+    def zero_out_plot(self,linefit, linemean, fillmean):
+        #for plot_item in self.ax.collections+self.ax.lines:
+        #    plot_item.remove()
+        if linefit is not None:
+            linefit.set_data([np.nan], [np.nan])
+        if linemean is not None:
+            linemean.set_data([np.nan], [np.nan])
+        if fillmean is not None:
+            path = fillmean.get_paths()[0]
+            v_x = np.hstack([0.0]*len(path.vertices))
+            vertices = np.vstack([v_x,v_x]).T
+            path.vertices = vertices
+        self.draw()
+    '''
     def sizeHint(self):
         return QtCore.QSize(125,100)
     def minimumSizeHint(self):
@@ -879,7 +898,12 @@ class SMHScatterplot(mpl.MPLWidget):
             if error is not None: pass # TODO!!!
             if linefit is not None: linefit.set_data([np.nan],[np.nan])
             if linemean is not None: linemean.set_data([0,1],[np.nan,np.nan])
-            if fillmean is not None: pass # TODO!!!
+            if fillmean is not None: #pass # TODO!!!
+                path = fillmean.get_paths()[0]
+                v_x = np.hstack([0.0]*len(path.vertices))
+                vertices = np.vstack([v_x,v_x]).T
+                path.vertices = vertices
+
     def linkToTable(self, tableview):
         """
         view for selection; model for data
@@ -934,6 +958,7 @@ class SMHScatterplot(mpl.MPLWidget):
         xs, ys, exs, eys = [], [], [], []
         Nrows = self.tablemodel.rowCount()
         if Nrows==0: return None
+        
         spectral_models = self.tablemodel.get_models_from_rows(np.arange(Nrows))
         for i in range(Nrows):
             ix = self._ix(i, self.xcol)
@@ -943,7 +968,7 @@ class SMHScatterplot(mpl.MPLWidget):
             if self.excol is None:
                 # TODO: Add x-error, which is a function of exattr...
                 ex = np.nan
-            else:
+            else: # This will never be called (we don't use x-err)
                 ix = self._ix(i, self.excol)
                 ex = self._load_value_from_table(ix)
             if self.eycol is None:
@@ -953,20 +978,27 @@ class SMHScatterplot(mpl.MPLWidget):
             else:
                 ix = self._ix(i, self.eycol)
                 ey = self._load_value_from_table(ix)
+            
             xs.append(x)
             ys.append(y)
             exs.append(ex)
-            eys.append(ey)
+            eys.append(np.nan if ey is None else ey)
         xs = np.array(xs); ys = np.array(ys); exs = np.array(exs); eys = np.array(eys)
+        
         valids = []
         for filt in self._filters:
             valids.append([filt(sm) for sm in spectral_models])
         valids = np.atleast_2d(np.array(valids, dtype=bool))
         
+        # All four datatypes: acceptable, not acceptable, user flag, upper limit
         for ifilt,(filt, point, error, linefit, linemean, fillmean) in enumerate(self._graphics):
             valid = valids[ifilt,:]
             nonzero = valid.sum() > 0
             x, y = xs[valid], ys[valid]
+            if np.all(np.isnan(xs)):
+                self.reset()
+                self.draw()
+            
             # E. Holmbeck added; only works for yerr though
             ex, ey = exs[valid], eys[valid]
             if point is not None:
@@ -975,55 +1007,79 @@ class SMHScatterplot(mpl.MPLWidget):
             if error is not None:
                 ## TODO not doing anything with error bars right now
                 # E. Holmbeck added this; shamelessly stolen: https://stackoverflow.com/questions/25210723/matplotlib-set-data-for-errorbar-plot
+                # Still very buggy.
                 ln, (erry_top, erry_bot), (barsy,) = error.lines
-                x_base = x
-                y_base = y
-                yerr_top = y_base + ey
-                yerr_bot = y_base - ey
+                #no_nans = ~np.isnan(y)
+                x_base = x#[no_nans]
+                y_base = y#[no_nans]
+                yerr_top = y_base + ey#[no_nans]
+                yerr_bot = y_base - ey#[no_nans]
                 erry_top.set_xdata(x_base)
                 erry_bot.set_xdata(x_base)
                 erry_top.set_ydata(yerr_top)
                 erry_bot.set_ydata(yerr_bot)
                 new_segments_y = [np.array([[x, yt], [x,yb]]) for x, yt, yb in zip(x_base, yerr_top, yerr_bot)]
                 barsy.set_segments(new_segments_y)
-                #pass
+            '''
             if nonzero and ((linefit is not None) or (linemean is not None)):
                 ## TODO: Figure out how best to save and return info about the lines
                 ## For now, just refitting whenever needed
-                try:
-                    #m, b, medy, stdy, stdm, N = utils.fit_line(x, y, None)
-                    # E. Holmbeck; tried... Still need to iron out the kinks.
-                    m, b, medy, stdy, stdm, N = utils.fit_line(x, y, ey)
-                except ValueError as e:
-                    return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-                #xlim = np.array(self.ax.get_xlim())
-                xlim = np.array([x.min(), x.max()])
-                if (linefit is not None) and nonzero:
-                    linefit.set_data(xlim, m*xlim + b)
+                if len(set(x))>1: # Holmbeck: stupid check
+                    line_fitting_data[ifilt] = utils.fit_line(x, y, ey)
                 else:
-                    linefit.set_data([np.nan], [np.nan])
-                if (linemean is not None) and nonzero:
-                    linemean.set_data([0,1], [medy, medy])
-                else:
-                    linemean.set_data([0,1], [np.nan, np.nan])
-                # E. Holmbeck added; shamelessly stolen: https://stackoverflow.com/questions/16120801/matplotlib-animate-fill-between-shape
-                if (fillmean is not None):
-                    path = fillmean.get_paths()[0]
-                    y0new = [medy - self.sigma*stdy]*2
-                    y1new = [medy + self.sigma*stdy]*2
-                    #import pdb
-                    #pdb.set_trace()
-                    #self.edit_sigma.text()
-                    xnew = list(self.ax.get_xlim())
-                    v_x = np.hstack([xnew[0],xnew,xnew[-1],xnew[::-1],xnew[0]])
-                    v_y = np.hstack([y1new[0],y0new,y0new[-1],y1new[::-1],y1new[0]])
-                    vertices = np.vstack([v_x,v_y]).T
-                    path.vertices = vertices
-                    self.ax.set_ylim(*[1.2*lim for lim in self.ax.get_ylim()])
-                
-        style_utils.relim_axes(self.ax)
+                    # Not sure if these parameters are ideal.
+                    #line_fitting_data[ifilt] = [0,y[0],y[0],0,0.2*np.ptp(y),len(x)]
+                    line_fitting_data[ifilt] = [0,y[0],y[0],ey[0],0,len(x)]
+            '''
+
+        # Reset axes before adding lines.
+        xlim,ylim = style_utils.relim_axes(self.ax)
+        xlim = np.array(xlim)
         self.reset_zoom_limits()
-        if redraw: self.draw()
+        
+        for ifilt,(filt, point, error, linefit, linemean, fillmean) in enumerate(self._graphics):
+            valid = valids[ifilt,:]
+            nonzero = valid.sum() > 0
+            if not nonzero:
+                continue
+            
+            #import pdb
+            #pdb.set_trace()
+            x, y, ey = xs[valid], ys[valid], eys[valid]
+            if np.all(np.isnan(x)): continue
+
+            if len(set(x))>1: # Holmbeck: stupid check
+                m,b,medy,stdy,stdm,N = utils.fit_line(x, y, ey)
+            else:
+                # Not sure if these parameters are ideal.
+                #line_fitting_data[ifilt] = [0,y[0],y[0],0,0.2*np.ptp(y),len(x)]
+                m,b,medy,stdy,stdm,N = [0,y[0],y[0],ey[0],0,len(x)]
+
+            if linefit is not None:
+                linefit.set_data(xlim, m*xlim + b)
+            #else:
+            #    linefit.set_data([np.nan], [np.nan])
+            if linemean is not None:
+                linemean.set_data([0,1], [medy, medy])
+            #else:
+            #    linemean.set_data([0,1], [np.nan, np.nan])
+            # E. Holmbeck added; shamelessly stolen: https://stackoverflow.com/questions/16120801/matplotlib-animate-fill-between-shape
+            if fillmean is not None:
+                path = fillmean.get_paths()[0]
+                y0new = [medy - self.sigma*stdy]*2
+                y1new = [medy + self.sigma*stdy]*2
+                #self.edit_sigma.text()
+                v_x = np.hstack([xlim[0],xlim,xlim[-1],xlim[::-1],xlim[0]])
+                v_y = np.hstack([y1new[0],y0new,y0new[-1],y1new[::-1],y1new[0]])
+                vertices = np.vstack([v_x,v_y]).T
+                path.vertices = vertices
+                #_,ylim = style_utils.relim_axes(self.ax, values_only=True)
+                #self.ax.set_ylim(*ylim)
+                self.ax.set_ylim([min([ylim[0],medy - (self.sigma+1)*stdy]), 
+                                  max([ylim[1],medy + (self.sigma+1)*stdy])])
+    
+        if redraw: 
+            self.draw()
         return None
     def update_selected_points(self, redraw=False):
         if self.tableview is None or self.tablemodel is None: return None
@@ -1338,7 +1394,7 @@ class MeasurementTableView(BaseTableView):
             if 'moog_opts' not in spectral_model.metadata:
                 spectral_model.metadata['moog_opts'] = {key: value}
             else:
-	            spectral_model.metadata['moog_opts'][key] = value
+                spectral_model.metadata['moog_opts'][key] = value
             if "fitted_result" in spectral_model.metadata:
                 num_fit += 1
                 try:

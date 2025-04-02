@@ -107,9 +107,9 @@ class ReviewTab(QtGui.QWidget):
         # Reset the model (and its views)
         self.measurement_model.endResetModel()
     def refresh_plots(self):
-        self.plot1.update_scatterplot(False)
-        self.plot2.update_scatterplot(False)
-        self.plot3.update_scatterplot(False)
+        self.plot1.update_scatterplot(True)
+        self.plot2.update_scatterplot(True)
+        self.plot3.update_scatterplot(True)
         self.plot1.update_selected_points(True)
         self.plot2.update_selected_points(True)
         self.plot3.update_selected_points(True)
@@ -175,17 +175,23 @@ class ReviewTab(QtGui.QWidget):
         ]
         linefit_styles = [{"color":"k","linestyle":"--","zorder":-99},None,None,None]
         linemean_styles = [{"color":"k","linestyle":":","zorder":-999},None,None,None]
-        self.plot1 = SMHScatterplot(None, "expot", "abundances",
+        # E. Holmbeck added error_styles:
+        error_styles = [{"ms":40,"markerfacecolor":"None","markeredgecolor":"k","ecolor":"k","lw":1},
+                        {"ms":40,"markerfacecolor":"None","markeredgecolor":"k","ecolor":"c","lw":1},
+                        {"ms":70,"markerfacecolor":"none","markeredgecolor":"red","ecolor":"red","lw":2},
+                        {"ms":0,"markerfacecolor":"none","markeredgecolor":"none","ecolor":"none"},
+                        ]
+        self.plot1 = SMHScatterplot(None, "expot", "abundances",# eyattr="abundance_uncertainties",
                                     tableview=self.measurement_view,
-                                    filters=filters, point_styles=point_styles,
+                                    filters=filters, point_styles=point_styles, error_styles=error_styles,
                                     linefit_styles=linefit_styles,linemean_styles=linemean_styles)
-        self.plot2 = SMHScatterplot(None, "reduced_equivalent_width", "abundances",
+        self.plot2 = SMHScatterplot(None, "reduced_equivalent_width", "abundances",# eyattr="abundance_uncertainties",
                                     tableview=self.measurement_view,
-                                    filters=filters, point_styles=point_styles,
+                                    filters=filters, point_styles=point_styles, error_styles=error_styles,
                                     linefit_styles=linefit_styles,linemean_styles=linemean_styles)
-        self.plot3 = SMHScatterplot(None, "wavelength", "abundances",
+        self.plot3 = SMHScatterplot(None, "wavelength", "abundances",# eyattr="abundance_uncertainties",
                                     tableview=self.measurement_view,
-                                    filters=filters, point_styles=point_styles,
+                                    filters=filters, point_styles=point_styles, error_styles=error_styles,
                                     linefit_styles=linefit_styles,linemean_styles=linemean_styles)
         
         sp = QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, 

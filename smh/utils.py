@@ -185,8 +185,11 @@ def fit_line(x, y, yerr=None):
         return np.nan, np.nan, np.nan, np.nan, np.nan, 0
 
     x, y = x[finite], y[finite]
-
+    if len(x)<=1:
+        return np.nan, np.nan, np.nan, np.nan, np.nan, 0
+    
     # E. Holmbeck added
+    if np.any(yerr) is None or np.any(np.isnan(yerr)): yerr=None
     if yerr is not None:
         # E. Holmbeck tried it by hand, but failed.
         yerr = yerr[finite]
