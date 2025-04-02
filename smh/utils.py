@@ -185,32 +185,35 @@ def fit_line(x, y, yerr=None):
         return np.nan, np.nan, np.nan, np.nan, np.nan, 0
 
     x, y = x[finite], y[finite]
-    if len(x)<=1:
+    if len(x)==0:
         return np.nan, np.nan, np.nan, np.nan, np.nan, 0
     
     # E. Holmbeck added
-    if np.any(yerr) is None or np.any(np.isnan(yerr)): yerr=None
+    if np.all(yerr) is None or np.all(np.isnan(yerr)): yerr=None
     if yerr is not None:
         # E. Holmbeck tried it by hand, but failed.
-        yerr = yerr[finite]
-        not_None = (yerr!=None)
-        # There are still x and y even if the yerr is None..
-        # Also, do we still use xstar when we assume no error on x?
-        yerr = np.array(yerr[not_None], dtype=float)
-        x = x[not_None]
-        y = y[not_None]
+        yerr = np.array(yerr[finite], dtype=float)
         xbar = np.mean(x)
         n = float(len(x))
-
-        ((m,b_bar), pcov) = optimize.curve_fit(lambda x,m,b: m*x + b, x-xbar, y, sigma=yerr)
-            
-        m_stderr = pcov[0,0]
-        b = b_bar - m*xbar
+        
+        if len(x)>1:
+            ((m,b_bar), pcov) = optimize.curve_fit(lambda x,m,b: m*x + b, x-xbar, y, sigma=yerr)
+            m_stderr = pcov[0,0]
+            b = b_bar - m*xbar
+        else:
+            m = 0.0
+            m_stderr = 0.0
+            b = None
+        
         weights = np.power(yerr,-2)
         ymean = np.average(y, weights=weights)
+        if b is None: b = ymean
         yvar = np.sqrt(np.average(np.power(y-ymean,2), weights=weights))
+        # Added average measurement uncertainty; TODO: CHECK THIS
+        weighted_uncertainty = np.sqrt(1.0/sum(weights))
+        total_yuncertainty = np.sqrt(weighted_uncertainty**2 + yvar**2)
 
-        return m, b, ymean, yvar, m_stderr, n
+        return m, b, ymean, total_yuncertainty, m_stderr, n
         '''
         #raise NotImplementedError("Does not fit with error bars yet")
         ybar = np.mean(y)

@@ -1009,28 +1009,16 @@ class SMHScatterplot(mpl.MPLWidget):
                 # E. Holmbeck added this; shamelessly stolen: https://stackoverflow.com/questions/25210723/matplotlib-set-data-for-errorbar-plot
                 # Still very buggy.
                 ln, (erry_top, erry_bot), (barsy,) = error.lines
-                #no_nans = ~np.isnan(y)
-                x_base = x#[no_nans]
-                y_base = y#[no_nans]
-                yerr_top = y_base + ey#[no_nans]
-                yerr_bot = y_base - ey#[no_nans]
+                x_base = x
+                y_base = y
+                yerr_top = y_base + ey
+                yerr_bot = y_base - ey
                 erry_top.set_xdata(x_base)
                 erry_bot.set_xdata(x_base)
                 erry_top.set_ydata(yerr_top)
                 erry_bot.set_ydata(yerr_bot)
                 new_segments_y = [np.array([[x, yt], [x,yb]]) for x, yt, yb in zip(x_base, yerr_top, yerr_bot)]
                 barsy.set_segments(new_segments_y)
-            '''
-            if nonzero and ((linefit is not None) or (linemean is not None)):
-                ## TODO: Figure out how best to save and return info about the lines
-                ## For now, just refitting whenever needed
-                if len(set(x))>1: # Holmbeck: stupid check
-                    line_fitting_data[ifilt] = utils.fit_line(x, y, ey)
-                else:
-                    # Not sure if these parameters are ideal.
-                    #line_fitting_data[ifilt] = [0,y[0],y[0],0,0.2*np.ptp(y),len(x)]
-                    line_fitting_data[ifilt] = [0,y[0],y[0],ey[0],0,len(x)]
-            '''
 
         # Reset axes before adding lines.
         xlim,ylim = style_utils.relim_axes(self.ax)
@@ -1043,26 +1031,15 @@ class SMHScatterplot(mpl.MPLWidget):
             if not nonzero:
                 continue
             
-            #import pdb
-            #pdb.set_trace()
             x, y, ey = xs[valid], ys[valid], eys[valid]
             if np.all(np.isnan(x)): continue
-
-            if len(set(x))>1: # Holmbeck: stupid check
-                m,b,medy,stdy,stdm,N = utils.fit_line(x, y, ey)
-            else:
-                # Not sure if these parameters are ideal.
-                #line_fitting_data[ifilt] = [0,y[0],y[0],0,0.2*np.ptp(y),len(x)]
-                m,b,medy,stdy,stdm,N = [0,y[0],y[0],ey[0],0,len(x)]
-
+            
+            m,b,medy,stdy,stdm,N = utils.fit_line(x, y, ey)
+            
             if linefit is not None:
                 linefit.set_data(xlim, m*xlim + b)
-            #else:
-            #    linefit.set_data([np.nan], [np.nan])
             if linemean is not None:
                 linemean.set_data([0,1], [medy, medy])
-            #else:
-            #    linemean.set_data([0,1], [np.nan, np.nan])
             # E. Holmbeck added; shamelessly stolen: https://stackoverflow.com/questions/16120801/matplotlib-animate-fill-between-shape
             if fillmean is not None:
                 path = fillmean.get_paths()[0]

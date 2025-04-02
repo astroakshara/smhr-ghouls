@@ -1661,6 +1661,8 @@ class Session(BaseSession):
             I cannot imagine why you'd set it to False unless debugging
         :param what_fe:
             1 or 2 depending on Fe I or Fe II
+            # Holmbeck added:
+            If None, use I or II depending on the ionization state of the species X.
         """
         what_key_type = "element" if organize_by_element else "species"
 
@@ -1806,10 +1808,13 @@ class Session(BaseSession):
         ## We'll eventually put in upper limits too.
         spectral_models = self.metadata.get("spectral_models", [])
         # Erika added EW sigma to output
-        linedata = np.zeros((len(spectral_models), 8)) + np.nan
+        names=["species", "wavelength", "expot", "loggf", "EW", "e_EW", "logeps", "e_logeps"]
+        dtypes=[(name, "f4") for name in names[:7]] + [(names[7], "U10")]
+        # Convoluted, but we need to be able to print out upper limits
+        linedata = np.array(np.zeros(len(spectral_models)) + np.nan, dtype=dtypes)
         for i,spectral_model in enumerate(spectral_models):
             # TODO include upper limits
-            if not spectral_model.is_acceptable or spectral_model.is_upper_limit: continue
+            if not spectral_model.is_acceptable: continue# or not spectral_model.is_upper_limit: continue
             if isinstance(spectral_model, SpectralSynthesisModel):
                 assert len(spectral_model.elements) == 1, spectral_model.elements
                 wavelength = spectral_model.wavelength
@@ -1817,13 +1822,15 @@ class Session(BaseSession):
                 expot = spectral_model.expot
                 loggf = spectral_model.loggf
                 EW = np.nan
-                e_EW = 0.
+                e_EW = np.nan
                 logeps = spectral_model.abundances[0]
-                try:
-                    logeps_err = spectral_model.metadata["2_sigma_abundance_error"]/2.0
-                except:
-                    logeps_err = np.nan
-                print("exporting synth",wavelength,species)
+                if spectral_model.is_upper_limit:
+                    logeps_err = "<"
+                elif "2_sigma_abundance_error" in spectral_model.metadata:
+                    logeps_err = f"{spectral_model.metadata['2_sigma_abundance_error']/2.0:6.3f}"
+                else:
+                    logeps_err = "nan"
+                #print("exporting synth",wavelength,species)
             elif isinstance(spectral_model, ProfileFittingModel):
                 line = spectral_model.transitions[0]
                 wavelength = line['wavelength']
@@ -1836,22 +1843,30 @@ class Session(BaseSession):
                     # Erika added EW sigma to output
                     e_EW = max(1000.*np.abs(spectral_model.metadata["fitted_result"][2]["equivalent_width"][1:]))
                     logeps = spectral_model.abundances[0]
-                    logeps_err = spectral_model.abundance_uncertainties or np.nan
+                    logeps_err = f"{spectral_model.abundance_uncertainties or np.nan:6.3f}"
                 except Exception as e:
                     print(e)
                     EW = np.nan
                     e_EW = np.nan
                     logeps = np.nan
-                    logeps_err = np.nan
+                    logeps_err = "nan"
                 if EW is None: EW = np.nan
                 if logeps is None: logeps = np.nan
             else:
                 raise NotImplementedError
             # Erika added EW sigma to output
-            linedata[i,:] = [species, wavelength, expot, loggf, EW, e_EW, logeps, logeps_err]
+            try:
+                linedata[i] = tuple([species, wavelength, expot, loggf, EW, e_EW, logeps, logeps_err])
+            except:
+                import pdb
+                pdb.set_trace()
+
+        # This was an extra check for bad lines/upper limits
         #ii_bad = np.logical_or(np.isnan(linedata[:,5]), np.isnan(linedata[:,4]))
-        ii_bad = np.isnan(linedata[:,5])
-        linedata = linedata[~ii_bad,:]
+        #ii_bad = np.isnan(linedata[:,6]) # Used to be 5.
+        #linedata = linedata[~ii_bad,:]
+        ii_bad = np.isnan(linedata['logeps'])
+        linedata = np.delete(linedata, ii_bad)
         if len(linedata) == 0:
             raise RuntimeError("No lines have abundances measured!")
 
@@ -1865,7 +1880,8 @@ class Session(BaseSession):
         raise NotImplementedError
     def _export_ascii_measurement_table(self, filepath, linedata):
         # Erika added EW sigma to output
-        names = ["species", "wavelength", "expot", "loggf", "EW", "e_EW", "logeps", "e_logeps"]
+        #names = ["species", "wavelength", "expot", "loggf", "EW", "e_EW", "logeps", "e_logeps"]
+        names = linedata.dtype.names
         tab = astropy.table.Table(linedata, names=names)
         tab.sort(["species","wavelength","expot"])
         tab["wavelength"].format = ".3f"
@@ -1874,7 +1890,7 @@ class Session(BaseSession):
         tab["EW"].format = "6.2f"
         tab["e_EW"].format = "6.2f"
         tab["logeps"].format = "6.3f"
-        tab["e_logeps"].format = "6.3f"
+        #tab["e_logeps"].format = "s"
         tab.write(filepath, format="ascii.fixed_width_two_line")
         return True
 
