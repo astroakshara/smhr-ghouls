@@ -139,7 +139,11 @@ def relim_axes(axes, percent=20):
 
     else:
         xlim = (x[0] - 1, x[0] + 1)
-
+    
+    if xlim is not None:
+        if xlim[0] == xlim[1]:
+            xlim[0] -= 1
+            xlim[1] += 1
 
     if y.size > 1:
         ylim = [

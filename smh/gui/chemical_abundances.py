@@ -1505,6 +1505,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             = self.checkbox_upper_limit_2.isChecked()
         self.measurement_view.update_row(proxy_index.row())
         self.summarize_current_table()
+        self.fit_none(spectral_model)
         self.refresh_plots()
         return None
     def clicked_btn_find_upper_limit(self):
@@ -1522,6 +1523,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         self.measurement_view.update_row(proxy_index.row())
         self.summarize_current_table()
         self.update_fitting_options()
+        self.fit_none(spectral_model)
         self.refresh_plots()
         return None
         
@@ -1599,7 +1601,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         if not skip_message:
             num_models = 0
             for sm in self.parent.session.metadata.get("spectral_models", []):
-                if isinstance(sm, SpectralSynthesisModel) and sm.is_acceptable: num_models += 1
+                if isinstance(sm, SpectralSynthesisModel) and sm.is_acceptable==self.acceptables_only: num_models += 1
             
             time_estimate = num_models * 10.0
             if time_estimate >= 60:
@@ -1628,12 +1630,16 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             self.clicked_btn_update_abund_table(row=row_count)
             try:
                 res = sm.fit()
-            except (ValueError, RuntimeError) as e:
+            except ValueError as e:
+                logger.info("Please have at least one abundance for an element, otherwise, I'll skip it!")
+                print(f"Please have at least one abundance for {sm.elements[0]:}, otherwise, I'll skip it!")
+                logger.info(e)
+                continue
+            except RuntimeError as e:
                 logger.info("Fitting error")
                 logger.info(e)
                 self.acceptables_only = True
                 return None
-            self.measurement_view.update_row(row_count)
             self.summarize_current_table()
             self.update_fitting_options()
             self.refresh_plots(row_count)
