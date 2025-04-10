@@ -591,7 +591,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
 
         # Create radial velocity tab
         self.rv_tab = rv.RVTab(self)
-        self.tabs.addTab(self.rv_tab, "Radial velocity")
+        self.tabs.addTab(self.rv_tab, "Radial Velocity")
         
         # Create normalization tab.
         self.normalization_tab = normalization.NormalizationTab(self)
@@ -600,7 +600,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         # Create stellar parameters tab.
         self.stellar_parameters_tab \
             = stellar_parameters.StellarParametersTab(self)
-        self.tabs.addTab(self.stellar_parameters_tab, "Stellar parameters")
+        self.tabs.addTab(self.stellar_parameters_tab, "Stellar Parameters")
 
         # Create chemical abundances tab
         self.chemical_abundances_tab \
