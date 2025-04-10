@@ -588,6 +588,30 @@ class NormalizationTab(QtGui.QWidget):
             self.draw_continuum(refresh=False)
             self.update_continuum_mask(refresh=True)
             return True
+
+        # remove nearest mask
+        if event.key in "wW":
+            if "exclude" in self._cache["input"]:
+                exclude_regions = self._cache["input"]["exclude"]
+                if len(exclude_regions)==0:
+                    return True
+                
+                x = event.xdata
+                diff = np.abs(exclude_regions - x)
+                remove_row = np.where(diff == np.min(diff))[0]
+                if len(remove_row)>0:
+                    exclude_regions = np.delete(exclude_regions, remove_row[0], axis=0)
+                '''
+                for i,(xlow,xhigh) in enumerate(exclude_regions):
+                    if xlow<=x<=xhigh:
+                        exclude_regions = np.delete(exclude_regions,i,axis=0)
+                        break
+                #else:
+                '''
+                self._cache["input"]["exclude"] = exclude_regions     
+                self.fit_continuum(clobber=True)
+                self.draw_continuum(refresh=False)
+                self.update_continuum_mask(refresh=True)
             
     def figure_mouse_press(self, event):
         """

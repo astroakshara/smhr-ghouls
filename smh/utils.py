@@ -196,7 +196,7 @@ def fit_line(x, y, yerr=None):
         xbar = np.mean(x)
         n = float(len(x))
         
-        if len(x)>1:
+        if len(set(x))>1:
             ((m,b_bar), pcov) = optimize.curve_fit(lambda x,m,b: m*x + b, x-xbar, y, sigma=yerr)
             m_stderr = pcov[0,0]
             b = b_bar - m*xbar
@@ -212,7 +212,6 @@ def fit_line(x, y, yerr=None):
         # Added average measurement uncertainty; TODO: CHECK THIS
         weighted_uncertainty = np.sqrt(1.0/sum(weights))
         total_yuncertainty = np.sqrt(weighted_uncertainty**2 + yvar**2)
-
         return m, b, ymean, total_yuncertainty, m_stderr, n
         '''
         #raise NotImplementedError("Does not fit with error bars yet")
@@ -235,7 +234,8 @@ def fit_line(x, y, yerr=None):
     x = x - xbar
     m, b_bar, r, p, m_stderr = stats.linregress(x, y)
     b = b_bar - m*xbar
-    return m, b, np.median(y), np.std(y), m_stderr, len(x)
+    #return m, b, np.median(y), np.std(y), m_stderr, len(x)
+    return m, b, np.mean(y), np.std(y), m_stderr, len(x)
 
 def spectral_model_conflicts(spectral_models, line_list):
     """

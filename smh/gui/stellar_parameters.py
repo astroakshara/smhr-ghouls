@@ -289,31 +289,31 @@ class StellarParametersTab(QtGui.QWidget):
         
         ## Fit lines
         try:
-            mchi1, bchi1, med1, eXH1, emchi1, N1 = utils.fit_line(chi1, eps1)
+            mchi1, bchi1, wmean1, eXH1, emchi1, N1 = utils.fit_line(chi1, eps1)
         except Exception as e:
             logger.debug(e)
-            mchi1, bchi1, med1, eXH1, emchi1, N1 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps1)
+            mchi1, bchi1, wmean1, eXH1, emchi1, N1 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps1)
         try:
-            mREW1, bREW1, med1, eXH1, emREW1, N1 = utils.fit_line(REW1, eps1)
+            mREW1, bREW1, wmean1, eXH1, emREW1, N1 = utils.fit_line(REW1, eps1)
         except Exception as e:
             logger.debug(e)
-            mREW1, bREW1, med1, eXH1, emREW1, N1 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps1)
+            mREW1, bREW1, wmean1, eXH1, emREW1, N1 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps1)
         try:
-            mchi2, bchi2, med2, eXH2, emchi2, N2 = utils.fit_line(chi2, eps2)
+            mchi2, bchi2, wmean2, eXH2, emchi2, N2 = utils.fit_line(chi2, eps2)
         except Exception as e:
             logger.debug(e)
-            mchi2, bchi2, med2, eXH2, emchi2, N2 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps2)
+            mchi2, bchi2, wmean2, eXH2, emchi2, N2 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps2)
         try:
-            mREW2, bREW2, med2, eXH2, emREW2, N2 = utils.fit_line(REW2, eps2)
+            mREW2, bREW2, wmean2, eXH2, emREW2, N2 = utils.fit_line(REW2, eps2)
         except Exception as e:
             logger.debug(e)
-            mREW2, bREW2, med2, eXH2, emREW2, N2 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps2)
+            mREW2, bREW2, wmean2, eXH2, emREW2, N2 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps2)
         
         ## Update table
-        XH1 = med1 - solar_composition(26.0)
-        XH2 = med2 - solar_composition(26.1)
-        meanXH1 = np.mean(eps1) - solar_composition(26.0)
-        meanXH2 = np.mean(eps2) - solar_composition(26.1)
+        XH1 = wmean1 - solar_composition(26.0)
+        XH2 = wmean2 - solar_composition(26.1)
+        meanXH1 = np.median(eps1) - solar_composition(26.0)
+        meanXH2 = np.median(eps2) - solar_composition(26.1)
         self.state_fe1_N.setText(u"Fe I ({})".format(N1))
         self.state_fe1_XH.setText(u"{:.2f} ± {:.2f} ({:.2f})".format(XH1,eXH1,meanXH1))
         self.state_fe1_dAdchi.setText(u"{:.3f} ± {:.3f}".format(mchi1, emchi1))
@@ -608,7 +608,7 @@ class StellarParametersTab(QtGui.QWidget):
             return label
         # Create Header
         create_label("Species", 0, 0, align=QtCore.Qt.AlignLeft)
-        create_label(u"〈[X/H]〉", 0, 1)
+        create_label(u"〈[X/H]〉 weighted average (median)", 0, 1)
         create_label(u"∂A/∂χ", 0, 2)
         create_label(u"∂A/∂REW", 0, 3)
         
