@@ -277,6 +277,39 @@ class NormalizationTab(QtGui.QWidget):
 
         settings_layout.addWidget(self.stitch_btn)
 
+        grid_layout = QtGui.QGridLayout()
+        #settings_grid_layout.addLayout(hbox, 7, 1, 1, 1)
+        settings_layout.addLayout(grid_layout)
+        self.line = QtGui.QFrame()
+        self.line.setFrameShape(QtGui.QFrame.HLine)
+        self.line.setFrameShadow(QtGui.QFrame.Sunken)
+        #spacer = QtGui.QSpacerItem(QtGui.QSizePolicy.MinimumExpanding, 10)
+        #grid_layout.addItem(spacer, 0, 0, 1, 2)
+        grid_layout.addWidget(self.line, 0, 0, 1, 2, alignment=QtCore.Qt.AlignBottom)
+        
+        buttons = {
+                   "Click+Drag": "Add mask",
+                   "Left/Right": "Change order",
+                   "Up/Down": "Scale continuum by 1%",
+                   "a": "Add a point",
+                   "x": "Remove nearest point",
+                   "u": "Undo last mask",
+                   "w": "Remove nearest mask",
+                   "c": "Clear all masks and points",
+                   "r": "Reset zoom limits",
+                   "d": "Do not normalize this order",
+                   "f": "Refit",
+                   }
+        
+        for row,(button,description) in enumerate(buttons.items(),1):
+            label = QtGui.QLabel(self)
+            label.setText(button)
+            label.setFont(font)
+            grid_layout.addWidget(label, row, 0, 1, 1, alignment=QtCore.Qt.AlignCenter) #int fromRow, int fromColumn, int rowSpan, int columnSpan, alignment
+            label = QtGui.QLabel(self)
+            label.setText(description)
+            grid_layout.addWidget(label, row, 1, 1, 1) #int fromRow, int fromColumn, int rowSpan, int columnSpan, alignment
+
         # Add a spacer.
         settings_layout.addItem(QtGui.QSpacerItem(
             40, 20, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding))
@@ -580,10 +613,19 @@ class NormalizationTab(QtGui.QWidget):
             
         # 'x': clear all added points
         if event.key in "xX":
-            for key in ["additional_points"]:
-                if key in self._cache["input"]:
-                    del self._cache["input"][key]
-            
+            if "additional_points" not in self._cache["input"]:
+                return True
+            xy = np.array([event.xdata,event.ydata])
+            points_xy = self._cache["input"]["additional_points"][:,:2]
+            if len(points_xy)==0:
+                return True
+            diff = np.power(points_xy - xy,2)
+            diff = np.sum(diff, axis=1)
+            remove_point = np.where(diff==np.min(diff))[0]
+            if len(remove_point)==0:
+                return True
+            self._cache["input"]["additional_points"] = np.delete(self._cache["input"]["additional_points"], remove_point[0], axis=0)
+
             self.fit_continuum(clobber=True)
             self.draw_continuum(refresh=False)
             self.update_continuum_mask(refresh=True)
@@ -1058,13 +1100,13 @@ class NormalizationTab(QtGui.QWidget):
             
         return None
 
-	# -----------------------------------------------------------------
-	# E. Holmbeck added these update functions
+    # -----------------------------------------------------------------
+    # E. Holmbeck added these update functions
     def update_blue_trim(self):
         try:
-        	trim_region = int(self.blue_trim.text())
+            trim_region = int(self.blue_trim.text())
         except ValueError:
-        	return None
+            return None
         
         if trim_region == 0:
             return None
@@ -1107,9 +1149,9 @@ class NormalizationTab(QtGui.QWidget):
 
     def update_red_trim(self):
         try:
-        	trim_region = int(self.red_trim.text())
+            trim_region = int(self.red_trim.text())
         except ValueError:
-        	return None
+            return None
 
         if trim_region == 0:
             return None
@@ -1147,7 +1189,7 @@ class NormalizationTab(QtGui.QWidget):
             self.update_continuum_mask(refresh=True)
 
         return None
-	# -----------------------------------------------------------------
+    # -----------------------------------------------------------------
 
     def update_high_sigma_clip(self):
         """ Update the high sigma clip value. """
