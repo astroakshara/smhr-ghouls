@@ -288,6 +288,7 @@ class NormalizationTab(QtGui.QWidget):
         grid_layout.addWidget(self.line, 0, 0, 1, 2, alignment=QtCore.Qt.AlignBottom)
         
         buttons = {
+                   "Ctrl+Drag": "Zoom",
                    "Click+Drag": "Add mask",
                    "Left/Right": "Change order",
                    "Up/Down": "Scale continuum by 1%",
