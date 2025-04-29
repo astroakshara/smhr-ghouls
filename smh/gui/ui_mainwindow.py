@@ -257,6 +257,12 @@ class Ui_MainWindow(QtGui.QMainWindow):
                 defaults = yaml.load(fp, yaml.FullLoader)
             except AttributeError:
                 defaults = yaml.load(fp)
+        
+        # Holmbeck: HACKY, but I think ".update" overwrites normalization.
+        if 'normalization' in defaults:
+            normalization = defaults.pop('normalization')
+            self.session.metadata['normalization']['cache'] = normalization
+        
         self.session.metadata.update(defaults)
 
         # TODO: WE SHOULD REMOVE THIS: THE GUI SHOULD READ FROM .SETTINGS()

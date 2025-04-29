@@ -771,7 +771,9 @@ class RVTab(QtGui.QWidget):
         """
         Correct the radial velocity of the observed spectra.
         """
-
+        if "rv_applied" not in self.parent.session.metadata["rv"]:
+            self.parent.session.metadata["rv"]["rv_applied"] = 0.0
+        
         rv_diff = np.float(self.rv_applied.text()) + np.float(self.parent.session.metadata["rv"]["rv_applied"])
         
         self.parent.session.rv_correct(self.rv_applied.text())
@@ -781,6 +783,7 @@ class RVTab(QtGui.QWidget):
 
         # Enable and update the normalization tab.
         self.parent.tabs.setTabEnabled(self.parent.tabs.indexOf(self) + 1, True)
+        
         # New function E. Holmbeck added to keep masks
         self.parent.normalization_tab.update_rv_applied_keep_masks(rv_diff)
 

@@ -550,7 +550,6 @@ class Session(BaseSession):
         :param key_tree:
             A tuple containing a tree of dictionary keys.
         """
-
         if isinstance(key_tree, string_types):
             key_tree = [key_tree]
         
@@ -570,7 +569,7 @@ class Session(BaseSession):
             try:
                 for key in key_tree:
                     default = default[key]
-            except KeyError:
+            except (KeyError, TypeError) as e:
                 return default_return_value
 
             else:
@@ -597,15 +596,16 @@ class Session(BaseSession):
                 default = yaml.load(fp, yaml.FullLoader)
             except AttributeError:
                 default = yaml.load(fp)
-
-        branch = defaults
+        
+        # Holmbeck:changed "defaults" to "default"
+        branch = default
         for key in key_tree[:-1]:
             branch.setdefault(key, {})
             branch = branch[key]
         branch[key_tree[-1]] = value
 
         with open(self._default_settings_path, "w") as fp:
-            fp.write(yaml.dump(defaults))
+            fp.write(yaml.dump(default))
 
         return True
 

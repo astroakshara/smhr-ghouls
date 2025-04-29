@@ -857,7 +857,8 @@ class NormalizationTab(QtGui.QWidget):
         keys = ("function", "order", "low_sigma_clip", "high_sigma_clip",
             "knot_spacing", "blue_trim", "red_trim", "max_iterations")
         self._cache = {
-            "input": {}
+            #"input": self.parent.session.metadata['normalization'].get('cache', {})
+            "input": {} # Holmbeck: HACKY!!
         }
         for key in keys:
             self._cache["input"][key] \
@@ -960,10 +961,11 @@ class NormalizationTab(QtGui.QWidget):
         Make updates to the view when the radial velocity applied has been
         updated. Keep masks.
         """
-
-        global c
+        #global c
+        # Holmbeck: HACKY
         for N in range(len(self.parent.session.input_spectra)):
-            self.parent.session.metadata["normalization"]['normalization_kwargs'][N]['exclude'] *= 1.0 + rv_diff/c
+            if 'exclude' in self.parent.session.metadata["normalization"]['normalization_kwargs'][N]:
+                self.parent.session.metadata["normalization"]['normalization_kwargs'][N]['exclude'] *= 1.0 + rv_diff/c
 
         # Update the current order fit, and the view.
         self.update_order_index()
@@ -1102,7 +1104,7 @@ class NormalizationTab(QtGui.QWidget):
         return None
 
     # -----------------------------------------------------------------
-    # E. Holmbeck added these update functions
+    # E. Holmbeck added these update functions; not sure that this is correct though.
     def update_blue_trim(self):
         try:
             trim_region = int(self.blue_trim.text())
