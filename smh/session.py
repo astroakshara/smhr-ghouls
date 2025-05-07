@@ -789,6 +789,7 @@ class Session(BaseSession):
         """
 
         self.metadata["rv"]["rv_applied"] = -float(rv)
+        
         # -----------------------------------------------------------------
         # E. Holmbeck: calculate the bcv if it doesn't exist
         bcv = self.metadata["rv"].get("barycentric_correction", np.nan)

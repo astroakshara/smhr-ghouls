@@ -971,8 +971,8 @@ class NormalizationTab(QtGui.QWidget):
         # Update the current order fit, and the view.
         self.update_order_index()
         # May 7 -- added these two lines back in.
-        #self.update_continuum_mask(refresh=False)
-        #self.fit_continuum(clobber=True)
+        self.update_continuum_mask(refresh=False)
+        self.fit_continuum(clobber=True)
         self.draw_order(refresh=False)
         self.draw_continuum(refresh=True)
 
@@ -1022,12 +1022,6 @@ class NormalizationTab(QtGui.QWidget):
         # mask
         
         # Get the applied velocity to shift some masks.
-        '''
-        try:
-            rv_applied = self.parent.session.metadata["rv"]["rv_applied"]
-        except (AttributeError, KeyError):
-            rv_applied = 0
-        '''
         rv_applied = self.parent.session.metadata["rv"].get("rv_applied", 0.0)
         # -----------------------------------------------------------------
         # E. Holmbeck added read-in BCV from header
@@ -1041,8 +1035,8 @@ class NormalizationTab(QtGui.QWidget):
         _ =self.parent.session.metadata["normalization"]["normalization_kwargs"]
         masked_regions = [
             #np.array(mask.get("rest_wavelength", [])),
-            np.array(mask.get("rest_wavelength", [])) * (1.0 - dop_shift/c),
-            np.array(mask.get("obs_wavelength", [])) * (1.0 - rv_applied/c),
+            np.array(mask.get("rest_wavelength", [])) * (1.0 + dop_shift/c),
+            np.array(mask.get("obs_wavelength", [])) * (1.0 + rv_applied/c),
             np.array(_[self.current_order_index].get("exclude", []))
         ]
         if "pixel" in mask:
@@ -1297,8 +1291,9 @@ class NormalizationTab(QtGui.QWidget):
             v = session.metadata["rv"]["rv_applied"]
         except (AttributeError, KeyError):
             v = 0
-
-        self.current_order._dispersion *= (1 - v/c)
+        
+        # TODO: Holmbeck note: this was -v/c...which is correct?
+        self.current_order._dispersion *= (1 + v/c)
 
         # Update the view if the input settings don't match the settings used
         # to normalize the current order.

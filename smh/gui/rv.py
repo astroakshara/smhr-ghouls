@@ -771,21 +771,17 @@ class RVTab(QtGui.QWidget):
         """
         Correct the radial velocity of the observed spectra.
         """
-    def correct_radial_velocity(self):
-        """
-        Correct the radial velocity of the observed spectra.
-        """
-        rv_diff = np.float(self.rv_applied.text()) + self.parent.session.metadata["rv"].get("rv_applied",0.0)
+        if "rv_applied" in  self.parent.session.metadata["rv"]:
+            rv_diff = np.float(self.rv_applied.text()) + self.parent.session.metadata["rv"]["rv_applied"]
+        else:
+            rv_diff = 0.0
         
+        # rv_applied is set in this function
         self.parent.session.rv_correct(self.rv_applied.text())
+        
         # Redshift the normalized order; will look for rv_applied.
         self.redraw_normalized_order(True)
         
-        # Holmbeck added these lines to resolve an RV bug.
-        #rv_diff = np.float(self.rv_applied.text()) + self.parent.session.metadata["rv"]["rv_applied"]
-        #print(self.parent.session.metadata["rv"]["rv_applied"], rv_diff)
-        self.parent.session.metadata["rv"]["rv_applied"] += np.float(self.rv_applied.text())
-
         # Enable and update the normalization tab.
         self.parent.tabs.setTabEnabled(self.parent.tabs.indexOf(self) + 1, True)
 
