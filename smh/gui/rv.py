@@ -771,31 +771,29 @@ class RVTab(QtGui.QWidget):
         """
         Correct the radial velocity of the observed spectra.
         """
-        rv_applied = self.parent.session.metadata["rv"].get("rv_applied", 0.0)
+    def correct_radial_velocity(self):
         """
-        self.parent.session.rv_correct(rv_applied)
-
-        '''
-        if "rv_applied" not in self.parent.session.metadata["rv"]:
-            self.parent.session.metadata["rv"]["rv_applied"] = 0.0
-        '''
+        Correct the radial velocity of the observed spectra.
         """
-        rv_diff = np.float(self.rv_applied.text()) + rv_applied #np.float(self.parent.session.metadata["rv"]["rv_applied"])
+        rv_diff = np.float(self.rv_applied.text()) + self.parent.session.metadata["rv"].get("rv_applied",0.0)
         
-        #self.parent.session.rv_correct(self.rv_applied.text())
-
-        self.parent.session.metadata["rv"]["rv_applied"] = rv_diff
-        self.parent.session.rv_correct(rv_diff)
-        # Redshift the normalized order.
+        self.parent.session.rv_correct(self.rv_applied.text())
+        # Redshift the normalized order; will look for rv_applied.
         self.redraw_normalized_order(True)
+        
+        # Holmbeck added these lines to resolve an RV bug.
+        #rv_diff = np.float(self.rv_applied.text()) + self.parent.session.metadata["rv"]["rv_applied"]
+        #print(self.parent.session.metadata["rv"]["rv_applied"], rv_diff)
+        self.parent.session.metadata["rv"]["rv_applied"] += np.float(self.rv_applied.text())
 
         # Enable and update the normalization tab.
         self.parent.tabs.setTabEnabled(self.parent.tabs.indexOf(self) + 1, True)
-        
-        # New function E. Holmbeck added to keep masks
-        print(rv_diff, rv_applied)
-        self.parent.normalization_tab.update_rv_applied_keep_masks(rv_applied)
 
+        # New function E. Holmbeck added to keep masks; this shifts the masks by the rv_diff;
+        # Basically, if the saved rv_applied is different from what is in the text box, shift it by that much
+        #self.parent.normalization_tab.update_rv_applied()
+        self.parent.normalization_tab.update_rv_applied_keep_masks(rv_diff)
+        
         # Enable relevant menu actions.
         self.parent._action_fit_balmer_lines.setEnabled(True)
 
