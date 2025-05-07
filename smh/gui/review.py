@@ -119,6 +119,18 @@ class ReviewTab(QtGui.QWidget):
         self.plot3.update_selected_points(True)
     def selected_measurement_changed(self):
         self.refresh_selected_points()
+        if self.measurement_view is None or self.measurement_model is None: return None
+        #logger.debug("update_selected_points ({}, {})".format(self, redraw))
+        row = self.measurement_view.selectionModel().selectedRows()
+        # TODO: this doesn't work yet; ideally, update the plots in the Chemical Abundances tab.
+        if len(row)>0:
+            row = row[0]
+            # We're only going to plot the first one anyway
+            row_index = row.row()
+            self.parent.chemical_abundances_tab.measurement_view.update_row(row_index)
+            spectral_model = self.measurement_model.get_models_from_rows([row_index])[0]
+            self.parent.chemical_abundances_tab.selected_model_changed(selected_model=spectral_model)
+
         return None
 
     def _init_summary_table(self):

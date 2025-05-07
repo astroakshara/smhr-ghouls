@@ -669,7 +669,7 @@ class RVTab(QtGui.QWidget):
             rv_applied = self.parent.session.metadata["rv"]["rv_applied"]
         except (AttributeError, KeyError):
             rv_applied = 0
-
+            
         self.ax_order_norm.lines[1].set_data([
             self._cache["normalized_order"].dispersion * (1 + rv_applied/c),
             self._cache["normalized_order"].flux,
@@ -771,13 +771,21 @@ class RVTab(QtGui.QWidget):
         """
         Correct the radial velocity of the observed spectra.
         """
+        rv_applied = self.parent.session.metadata["rv"].get("rv_applied", 0.0)
+        """
+        self.parent.session.rv_correct(rv_applied)
+
+        '''
         if "rv_applied" not in self.parent.session.metadata["rv"]:
             self.parent.session.metadata["rv"]["rv_applied"] = 0.0
+        '''
+        """
+        rv_diff = np.float(self.rv_applied.text()) + rv_applied #np.float(self.parent.session.metadata["rv"]["rv_applied"])
         
-        rv_diff = np.float(self.rv_applied.text()) + np.float(self.parent.session.metadata["rv"]["rv_applied"])
-        
-        self.parent.session.rv_correct(self.rv_applied.text())
+        #self.parent.session.rv_correct(self.rv_applied.text())
 
+        self.parent.session.metadata["rv"]["rv_applied"] = rv_diff
+        self.parent.session.rv_correct(rv_diff)
         # Redshift the normalized order.
         self.redraw_normalized_order(True)
 
@@ -785,7 +793,8 @@ class RVTab(QtGui.QWidget):
         self.parent.tabs.setTabEnabled(self.parent.tabs.indexOf(self) + 1, True)
         
         # New function E. Holmbeck added to keep masks
-        self.parent.normalization_tab.update_rv_applied_keep_masks(rv_diff)
+        print(rv_diff, rv_applied)
+        self.parent.normalization_tab.update_rv_applied_keep_masks(rv_applied)
 
         # Enable relevant menu actions.
         self.parent._action_fit_balmer_lines.setEnabled(True)
@@ -1222,7 +1231,7 @@ class RVRegionDialog(QtGui.QDialog):
             rv_applied = self.rv_tab.parent.session.metadata["rv"]["rv_applied"]
         except (AttributeError, KeyError):
             rv_applied = 0
-
+            
         self.ax_order_norm.lines[1].set_data([
             self.rv_tab._cache["normalized_order"].dispersion * (1 + rv_applied/c),
             self.rv_tab._cache["normalized_order"].flux,

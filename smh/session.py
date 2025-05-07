@@ -611,8 +611,6 @@ class Session(BaseSession):
 
 
 
-
-
     def _get_overlap_order(self, wavelength_regions, template_spectrum=None):
         """
         Find the order (and order index) that most overlaps with the template
@@ -791,10 +789,11 @@ class Session(BaseSession):
         """
 
         self.metadata["rv"]["rv_applied"] = -float(rv)
-        
         # -----------------------------------------------------------------
         # E. Holmbeck: calculate the bcv if it doesn't exist
-        if "barycentric_correction" in self.metadata["rv"]:
+        bcv = self.metadata["rv"].get("barycentric_correction", np.nan)
+        #if "barycentric_correction" in self.metadata["rv"]:
+        if ~np.isnan(bcv):
             return
         
         names = self._input_spectra_paths

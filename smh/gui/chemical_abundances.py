@@ -1058,39 +1058,62 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         model = self.parent.session.metadata["spectral_models"][index]
         return (model, proxy_index, index) if full_output else model
 
-    def selected_model_changed(self):
-        self.update_fitting_options()
-        self.update_spectrum_figure(True)
+    def selected_model_changed(self, **kwargs):
+        self.update_fitting_options(**kwargs)
+        self.update_spectrum_figure(True, **kwargs)
         return None
 
-    def update_spectrum_figure(self, redraw=False, reset_limits=True, row=None):
+    def update_spectrum_figure(self, redraw=False, reset_limits=True, row=None, selected_model=None):
         ## If synthesis, label selected lines
         self.extra_spec_1.set_data([[np.nan], [np.nan]])
         self.extra_spec_2.set_data([[np.nan], [np.nan]])
         #self.extra_spec_none.set_data([[np.nan], [np.nan]])
         
-        try:
-            if row==None:
-                selected_model = self._get_selected_model()
+        if selected_model is None:
+            try:
+                if row==None:
+                    selected_model = self._get_selected_model()
+                else:
+                    selected_model = self.parent.session.metadata["spectral_models"][row]
+            except IndexError:
+                selected_transitions = None
+                label_rv = None
+        
             else:
-                selected_model = self.parent.session.metadata["spectral_models"][row]
-        except IndexError:
-            selected_transitions = None
-            label_rv = None
-        else:
-            if isinstance(selected_model, SpectralSynthesisModel):
-                selected_elem = self.synth_abund_table.get_selected_element()
-                if selected_elem is not None:
-                    transitions = selected_model.transitions
-                    ii = np.logical_or(transitions["elem1"] == selected_elem,
-                                       transitions["elem2"] == selected_elem)
-                    if np.sum(ii) != 0:
-                        selected_transitions = transitions[ii]
-                        redraw=True # force redraw
-                        reset_limits=False
-                        label_rv = selected_model.metadata["manual_rv"]
+                if isinstance(selected_model, SpectralSynthesisModel):
+                    selected_elem = self.synth_abund_table.get_selected_element()
+                    if selected_elem is not None:
+                        transitions = selected_model.transitions
+                        ii = np.logical_or(transitions["elem1"] == selected_elem,
+                                           transitions["elem2"] == selected_elem)
+                        if np.sum(ii) != 0:
+                            selected_transitions = transitions[ii]
+                            redraw=True # force redraw
+                            reset_limits=False
+                            label_rv = selected_model.metadata["manual_rv"]
+                        else:
+                            selected_transitions = None
+                            label_rv = None
                     else:
                         selected_transitions = None
+                        label_rv = None
+                else:
+                    selected_transitions = None
+                    label_rv = None
+        
+        else:
+            selected_elem = selected_model.elements[0]
+            if selected_elem is not None:
+                transitions = selected_model.transitions
+                ii = np.logical_or(transitions["elem1"] == selected_elem,
+                                   transitions["elem2"] == selected_elem)
+                if np.sum(ii) != 0:
+                    selected_transitions = transitions[ii]
+                    redraw=True # force redraw
+                    reset_limits=True
+                    try:
+                        label_rv = selected_model.metadata["manual_rv"]
+                    except KeyError:
                         label_rv = None
                 else:
                     selected_transitions = None
@@ -1098,7 +1121,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             else:
                 selected_transitions = None
                 label_rv = None
-        
+            
         # Update figure
         self.figure.update_spectrum_figure(redraw=redraw,
                                            reset_limits=reset_limits,
@@ -1106,11 +1129,12 @@ class ChemicalAbundancesTab(QtGui.QWidget):
                                            label_rv=label_rv)
 
 
-    def update_fitting_options(self):
-        try:
-            selected_model = self._get_selected_model()
-        except IndexError:
-            return None
+    def update_fitting_options(self, selected_model=None):
+        if selected_model is None:
+            try:
+                selected_model = self._get_selected_model()
+            except IndexError:
+                return None
         if selected_model is None: return None
     
         if isinstance(selected_model, ProfileFittingModel):

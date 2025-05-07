@@ -365,14 +365,15 @@ class NormalizationTab(QtGui.QWidget):
         # Additional point markers.
         self.ax_order.scatter([], [], facecolor="k", zorder=5, picker=5)
 
-        self.ax_order.set_xticklabels([])
+        self.ax_order.tick_params(axis='x', labelbottom=False)
         self.ax_order.set_ylabel("Flux")
 
-        self.ax_order_norm = self.norm_plot.figure.add_subplot(gs[1])
+        self.ax_order_norm = self.norm_plot.figure.add_subplot(gs[1], sharex=self.ax_order)
         self.ax_order_norm.axhline(1, linestyle=":", c="#666666", zorder=1)
         self.ax_order_norm.plot([np.nan], [np.nan], c='k', zorder=2)
 
         # TODO: Make (0, 1.2) a default view setting.
+        self.ax_order_norm.tick_params(axis='x', labelbottom=True)
         self.ax_order_norm.set_ylim(0, 1.2)
         self.ax_order_norm.set_yticks([0, 0.5, 1.0])
         self.ax_order_norm.set_xlabel(u"Wavelength (Å)")
@@ -969,6 +970,9 @@ class NormalizationTab(QtGui.QWidget):
 
         # Update the current order fit, and the view.
         self.update_order_index()
+        # May 7 -- added these two lines back in.
+        #self.update_continuum_mask(refresh=False)
+        #self.fit_continuum(clobber=True)
         self.draw_order(refresh=False)
         self.draw_continuum(refresh=True)
 
@@ -1016,13 +1020,15 @@ class NormalizationTab(QtGui.QWidget):
         # will also be in the rest frame. So we don't need to shift the
         # 'rest_wavelength' mask, but we do need to shift the 'obs_wavelength'
         # mask
-
+        
         # Get the applied velocity to shift some masks.
+        '''
         try:
             rv_applied = self.parent.session.metadata["rv"]["rv_applied"]
         except (AttributeError, KeyError):
             rv_applied = 0
-        
+        '''
+        rv_applied = self.parent.session.metadata["rv"].get("rv_applied", 0.0)
         # -----------------------------------------------------------------
         # E. Holmbeck added read-in BCV from header
         try:
