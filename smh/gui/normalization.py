@@ -972,7 +972,7 @@ class NormalizationTab(QtGui.QWidget):
         # Update the current order fit, and the view.
         self.update_order_index()
         # May 7 -- added these two lines back in.
-        self.update_continuum_mask(refresh=False, v=rv_diff)
+        #self.update_continuum_mask(refresh=False, v=rv_diff)
         self.fit_continuum(clobber=True)
         self.draw_order(refresh=False)
         self.draw_continuum(refresh=True)
