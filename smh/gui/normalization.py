@@ -962,8 +962,9 @@ class NormalizationTab(QtGui.QWidget):
         Make updates to the view when the radial velocity applied has been
         updated. Keep masks.
         """
-        #global c
-        # Holmbeck: HACKY
+        # Holmbeck: HACKY; this should be shifting the terrestrial lines by the rv_diff
+        rv_applied = self.parent.session.metadata["rv"].get("rv_applied", 0.0)
+        # These come pre-loaded
         for N in range(len(self.parent.session.input_spectra)):
             if 'exclude' in self.parent.session.metadata["normalization"]['normalization_kwargs'][N]:
                 self.parent.session.metadata["normalization"]['normalization_kwargs'][N]['exclude'] *= 1.0 + rv_diff/c
@@ -971,7 +972,7 @@ class NormalizationTab(QtGui.QWidget):
         # Update the current order fit, and the view.
         self.update_order_index()
         # May 7 -- added these two lines back in.
-        self.update_continuum_mask(refresh=False)
+        self.update_continuum_mask(refresh=False, v=rv_diff)
         self.fit_continuum(clobber=True)
         self.draw_order(refresh=False)
         self.draw_continuum(refresh=True)
@@ -980,7 +981,7 @@ class NormalizationTab(QtGui.QWidget):
 
 
 
-    def update_continuum_mask(self, refresh=False):
+    def update_continuum_mask(self, refresh=False, v=0):
         """
         Draw the continuum mask (relevant for all orders).
         """
@@ -1293,7 +1294,7 @@ class NormalizationTab(QtGui.QWidget):
             v = 0
         
         # TODO: Holmbeck note: this was -v/c...which is correct?
-        self.current_order._dispersion *= (1 + v/c)
+        self.current_order._dispersion *= (1 - v/c)
 
         # Update the view if the input settings don't match the settings used
         # to normalize the current order.
@@ -1539,7 +1540,7 @@ class NormalizationTab(QtGui.QWidget):
         regions = []
         for v, masked_regions in mask_kinds:
             for region in np.array(masked_regions):
-                start, end = np.array(region) * (1 - v/c)
+                start, end = np.array(region) * (1 - v/c) # Holmbeck: + or -?
 
                 if end >= self.current_order.dispersion[0] \
                 and self.current_order.dispersion[-1] >= start:
