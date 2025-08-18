@@ -242,7 +242,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         print("filenames:",filenames)
         if filenames is None or filenames is False:
             filenames, selected_filter = QtGui.QFileDialog.getOpenFileNames(
-                self, caption="Select input spectra", directory="", filter="*")
+                self, caption="Select input spectra", dir="", filter="*")
             print("filenames:",filenames)
             if not filenames:
                 return None
@@ -323,7 +323,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         print("Testing path:",path)
         if path is None or path is False:
             path, _ = QtGui.QFileDialog.getOpenFileName(self,
-                caption="Select session", directory="", filter="*.smh")
+                caption="Select session", dir="", filter="*.smh")
             if not path: return
         print("We got:",path)
 
@@ -408,7 +408,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
 
         if path is None or path is False:
             path, _ = QtGui.QFileDialog.getSaveFileName(self,
-                caption="Enter filename", directory="", filter="*.smh")
+                caption="Enter filename", dir="", filter="*.smh")
             if not path: return
 
         self.session_path = path
@@ -449,7 +449,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         """ Export a normalized, rest-frame spectrum. """
         if self.session is None: return
         path, _ = QtGui.QFileDialog.getSaveFileName(self,
-            caption="Enter normalized rest frame spectrum filename", directory="", filter="")
+            caption="Enter normalized rest frame spectrum filename", dir="", filter="")
         if not path: return
         self.session.export_normalized_spectrum(path)
 
@@ -457,7 +457,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         """ Export a stitched, unnormalized, rest-frame spectrum. """
         if self.session is None: return
         path, _ = QtGui.QFileDialog.getSaveFileName(self,
-            caption="Enter unnormalized rest frame spectrum filename", directory="", filter="")
+            caption="Enter unnormalized rest frame spectrum filename", dir="", filter="")
         if not path: return
         self.session.export_unnormalized_spectrum(path)
 
@@ -465,7 +465,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         """ Export a stitched continuum. """
         if self.session is None: return
         path, _ = QtGui.QFileDialog.getSaveFileName(self,
-            caption="Enter continuum filename", directory="", filter="")
+            caption="Enter continuum filename", dir="", filter="")
         if not path: return
         self.session.export_stitched_continuum(path)
 
@@ -483,14 +483,14 @@ class Ui_MainWindow(QtGui.QMainWindow):
     def export_abundance_table(self):
         if self.session is None: return
         path, _ = QtGui.QFileDialog.getSaveFileName(self,
-            caption="Enter abundance table filename", directory="", filter="")
+            caption="Enter abundance table filename", dir="", filter="")
         if not path: return
         self.session.export_abundance_table(path)
     
     def export_spectral_model_measurements(self):
         if self.session is None: return
         path, _ = QtGui.QFileDialog.getSaveFileName(self,
-            caption="Enter spectral model measurements filename", directory="", filter="")
+            caption="Enter spectral model measurements filename", dir="", filter="")
         if not path: return
         self.session.export_spectral_model_measurements(path)
     
@@ -526,7 +526,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         Open a dialog to pick comparison spectrum
         """
         path, _ = QtGui.QFileDialog.getOpenFileName(self,
-            caption="Pick comparison spectrum", directory="", filter="")
+            caption="Pick comparison spectrum", dir="", filter="")
         if not path: return
         spectrum = smh.specutils.Spectrum1D.read(path)
         self.stellar_parameters_tab.specfig.update_comparison_spectrum(spectrum)
