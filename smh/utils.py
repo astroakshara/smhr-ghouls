@@ -232,8 +232,13 @@ def fit_line(x, y, yerr=None):
         
     xbar = np.mean(x)
     x = x - xbar
-    m, b_bar, r, p, m_stderr = stats.linregress(x, y)
-    b = b_bar - m*xbar
+    if len(set(x))>1:
+        m, b_bar, r, p, m_stderr = stats.linregress(x, y)
+	    b = b_bar - m*xbar
+    else:
+        m = 0.0
+        m_stderr = 0.0
+        b = np.mean(y)
     #return m, b, np.median(y), np.std(y), m_stderr, len(x)
     return m, b, np.mean(y), np.std(y), m_stderr, len(x)
 
