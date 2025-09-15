@@ -1542,7 +1542,7 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             logger.debug("Invalid sigma for finding limit")
             return None
         # E. Holmbeck changed start_at_current from True to False
-        upper_limit = spectral_model.find_upper_limit(sigma=sigma, start_at_current=False)
+        upper_limit = spectral_model.find_upper_limit(sigma=sigma, start_at_current=True)
         # Refresh GUI
         self.measurement_view.update_row(proxy_index.row())
         self.summarize_current_table()
