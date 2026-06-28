@@ -46,6 +46,9 @@ def abundance_cog(photosphere, transitions, full_output=False, verbose=False,
         Specify verbose flags to MOOG. This is primarily used for debugging.
     """
 
+    # Large EW lists can take longer than the generic MOOG default timeout.
+    kwargs.setdefault("timeout", 300)
+
     # Create a temporary directory.
     path = utils.twd_path(twd=twd,**kwargs)
 
@@ -159,13 +162,11 @@ def abundance_cog(photosphere, transitions, full_output=False, verbose=False,
 
     #raise NotImplementedError
 
-def strip_control_characters(out):
-    try:
-        for x in np.unique(re.findall(r"\x1b\[K|\x1b\[\d+;1H",out)):
-            out = out.replace(x,'')
-    except TypeError:
-        for x in np.unique(re.findall(r"\x1b\[K|\x1b\[\d+;1H", out.decode("ascii"))):
-            out = out.replace(x, '')
+def strip_control_characters(out):  #Akshara edits
+    if isinstance(out, bytes):
+        out = out.decode("utf-8", "replace")
+    for x in np.unique(re.findall(r"\x1b\[K|\x1b\[\d+;1H", out)):
+        out = out.replace(x, '')
     return out
 
 def _parse_abfind_summary(summary_out_path):

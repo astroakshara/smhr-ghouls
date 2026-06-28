@@ -112,6 +112,7 @@ class ProfileFittingModel(BaseSpectralModel):
             "central_weighting": True,
             "window": 5,
             "continuum_order": 1,
+            "manual_continuum": 1.0,  #Akshara edits
             "detection_sigma": 0.5,
             "detection_pixels": 3,
             "max_iterations": 5,
@@ -756,6 +757,8 @@ class ProfileFittingModel(BaseSpectralModel):
         # Assume rest of the parameters are continuum coefficients.
         if parameters[N:]:
             y *= np.polyval(parameters[N:], dispersion)
+        else:
+            y *= self.metadata.get("manual_continuum", 1.0)  #Akshara edits
         
         return y
 
@@ -797,5 +800,4 @@ if __name__ == "__main__":
             print("failed on {}".format(each))
 
     """
-
 

@@ -105,6 +105,8 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         # Connect buttons
         self.btn_fit_all.clicked.connect(self.fit_all_profiles)
         self.btn_measure_all.clicked.connect(self.measure_all)
+        self.btn_apply_nlte.clicked.connect(self.clicked_apply_nlte)
+        self.btn_apply_plot_limits.clicked.connect(self.apply_plot_y_limits)
 
         # TODO 
 
@@ -153,7 +155,8 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         self.full_measurement_model = MeasurementTableModelBase(self, self.parent.session, 
                                                     ["is_acceptable",
                                                      "species","wavelength",
-                                                     "abundances",
+                                                     "abundances","abundance_uncertainties",
+                                                     "abundance_nlte","nlte_delta",
                                                      "equivalent_width","reduced_equivalent_width",
                                                      "fwhm",
                                                      "equivalent_width_uncertainty",
@@ -192,7 +195,36 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         self.btn_measure_all.setSizePolicy(sp)
         hbox.addWidget(self.btn_fit_all)
         hbox.addWidget(self.btn_measure_all)
+        self.btn_apply_nlte = QtGui.QPushButton(self)  #Akshara edits
+        self.btn_apply_nlte.setText("NLTE")
+        self.btn_apply_nlte.setSizePolicy(sp)
+        hbox.addWidget(self.btn_apply_nlte)
         bot_lhs_layout.addLayout(hbox)
+
+        limits_box = QtGui.QHBoxLayout()  #Akshara edits
+        limits_box.setSpacing(4)
+        self.edit_residual_ylim = QtGui.QLineEdit(self)
+        self.edit_residual_ylim.setValidator(QtGui2.QDoubleValidator(0.0, 10.0, 4, self.edit_residual_ylim))
+        self.edit_residual_ylim.setText("0.05")
+        self.edit_residual_ylim.setMaximumWidth(55)
+        self.edit_flux_ymin = QtGui.QLineEdit(self)
+        self.edit_flux_ymin.setValidator(QtGui2.QDoubleValidator(-10.0, 10.0, 3, self.edit_flux_ymin))
+        self.edit_flux_ymin.setText("0.0")
+        self.edit_flux_ymin.setMaximumWidth(55)
+        self.edit_flux_ymax = QtGui.QLineEdit(self)
+        self.edit_flux_ymax.setValidator(QtGui2.QDoubleValidator(-10.0, 10.0, 3, self.edit_flux_ymax))
+        self.edit_flux_ymax.setText("1.2")
+        self.edit_flux_ymax.setMaximumWidth(55)
+        self.btn_apply_plot_limits = QtGui.QPushButton("Apply", self)
+        self.btn_apply_plot_limits.setSizePolicy(sp)
+        limits_box.addWidget(QtGui.QLabel("Resid ±", self))
+        limits_box.addWidget(self.edit_residual_ylim)
+        limits_box.addWidget(QtGui.QLabel("Flux", self))
+        limits_box.addWidget(self.edit_flux_ymin)
+        limits_box.addWidget(QtGui.QLabel("to", self))
+        limits_box.addWidget(self.edit_flux_ymax)
+        limits_box.addWidget(self.btn_apply_plot_limits)
+        bot_lhs_layout.addLayout(limits_box)
         
         return bot_lhs_layout
 
@@ -312,6 +344,11 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         self.combo_continuum = combo
         for i in range(10):
             self.combo_continuum.addItem("{:.0f}".format(i))
+        vbox_lhs.addLayout(hbox)
+
+        hbox, label, line = _create_line_in_hbox(self.tab_profile, "Manual cont.",  #Akshara edits
+                                                 -10, 10, 4)
+        self.edit_manual_continuum_profile = line
         vbox_lhs.addLayout(hbox)
 
         hbox, checkbox, label, line = _create_checkline_in_hbox(self.tab_profile, "RV tol",
@@ -565,6 +602,10 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             self.update_continuum_order)
         self.combo_continuum.currentIndexChanged.connect(
             self.fit_one)
+        self.edit_manual_continuum_profile.textChanged.connect(
+            self.update_edit_manual_continuum_profile)
+        self.edit_manual_continuum_profile.returnPressed.connect(
+            self.fit_one)
         self.checkbox_vrad_tolerance.stateChanged.connect(
             self.clicked_checkbox_vrad_tolerance)
         self.checkbox_vrad_tolerance.stateChanged.connect(
@@ -613,6 +654,8 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             (self.checkbox_continuum.stateChanged,self.fit_one),
             (self.combo_continuum.currentIndexChanged,self.update_continuum_order),
             (self.combo_continuum.currentIndexChanged,self.fit_one),
+            (self.edit_manual_continuum_profile.textChanged,self.update_edit_manual_continuum_profile),
+            (self.edit_manual_continuum_profile.returnPressed,self.fit_one),
             (self.checkbox_vrad_tolerance.stateChanged,self.clicked_checkbox_vrad_tolerance),
             (self.checkbox_vrad_tolerance.stateChanged,self.fit_one),
             (self.edit_vrad_tolerance.textChanged,self.update_vrad_tolerance),
@@ -904,6 +947,47 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         self.filter_combo_box.setCurrentIndex(current_element_index)
         return None
 
+    def clicked_apply_nlte(self):  #Akshara edits
+        self._check_for_spectral_models()
+        current_element_index = self.filter_combo_box.currentIndex()
+        try:
+            current_table_index = self.measurement_view.selectedIndexes()[-1]
+        except:
+            current_table_index = None
+
+        self.measurement_model.beginResetModel()
+        nlte_summary = self.parent.session.apply_mpia_nlte_corrections(
+            filter_spectral_models=lambda model: model.use_for_stellar_composition_inference)
+        self.measurement_model.endResetModel()
+        self.populate_filter_combo_box()
+        self.summarize_current_table()
+        self.refresh_plots()
+        if hasattr(self.parent, "literature_tab"):
+            self.parent.literature_tab.refresh_plot()
+
+        self.filter_combo_box.setCurrentIndex(current_element_index)
+        if current_table_index is not None:
+            try:
+                self.measurement_view.selectRow(current_table_index)
+            except:
+                logger.debug("Could not set index")
+        self._show_nlte_summary_dialog(nlte_summary, "NLTE")
+        return None
+
+    def _show_nlte_summary_dialog(self, summary, title):
+        corrected = summary.get("corrected", 0) if isinstance(summary, dict) else summary
+        total = summary.get("total", 0) if isinstance(summary, dict) else 0
+        by_source = summary.get("by_source", {}) if isinstance(summary, dict) else {}
+        details = ""
+        if len(by_source):
+            details = "\n\n" + "\n".join("{}: {}".format(source, count)
+                for source, count in sorted(by_source.items()))
+        QtGui.QMessageBox.information(
+            self, title,
+            "NLTE querying finished.\n\nFound NLTE offsets for {} out of {} lines.{}"
+            .format(corrected, total, details))
+        return None
+
     def measure_all(self):
         self._check_for_spectral_models()
         # Save this just to go back 
@@ -921,6 +1005,8 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         self.populate_filter_combo_box()
         self.summarize_current_table()
         self.refresh_plots()
+        if hasattr(self.parent, "literature_tab"):
+            self.parent.literature_tab.refresh_plot()
 
         self.filter_combo_box.setCurrentIndex(current_element_index)
         if current_table_index is not None:
@@ -1049,6 +1135,26 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         return True
 
 
+    def apply_plot_y_limits(self):  #Akshara edits
+        try:
+            residual_abs = float(self.edit_residual_ylim.text())
+        except ValueError:
+            residual_abs = None
+        if residual_abs is not None and residual_abs <= 0:
+            residual_abs = None
+
+        try:
+            flux_ymin = float(self.edit_flux_ymin.text())
+            flux_ymax = float(self.edit_flux_ymax.text())
+        except ValueError:
+            spectrum_ylim = None
+        else:
+            spectrum_ylim = (flux_ymin, flux_ymax) if flux_ymax > flux_ymin else None
+
+        self.figure.set_y_limits(residual_abs=residual_abs,
+                                 spectrum_ylim=spectrum_ylim)
+        return None
+
     def _get_selected_model(self, full_output=False):
         try:
             proxy_index = self.measurement_view.selectionModel().selectedRows()[-1]
@@ -1153,10 +1259,15 @@ class ChemicalAbundancesTab(QtGui.QWidget):
             if continuum_order < 0:
                 self.checkbox_continuum.setChecked(False)
                 self.combo_continuum.setEnabled(False)
+                self.edit_manual_continuum_profile.setEnabled(True)
             else:
                 self.checkbox_continuum.setChecked(True)
                 self.combo_continuum.setEnabled(True)
                 self.combo_continuum.setCurrentIndex(continuum_order)
+                self.edit_manual_continuum_profile.setEnabled(False)
+            selected_model.metadata.setdefault("manual_continuum", 1.0)
+            self.edit_manual_continuum_profile.setText(
+                "{}".format(selected_model.metadata["manual_continuum"]))
 
             # Radial velocity tolerance.
             vrad_tolerance = selected_model.metadata.get("velocity_tolerance", None)
@@ -1317,16 +1428,33 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         """ The checkbox for modeling the continuum was clicked. """
         if self.checkbox_continuum.isChecked():
             self.combo_continuum.setEnabled(True)
+            self.edit_manual_continuum_profile.setEnabled(False)
             self.update_continuum_order()
         else:
             self._get_selected_model().metadata["continuum_order"] = -1
             self.combo_continuum.setEnabled(False)
+            self.edit_manual_continuum_profile.setEnabled(True)
         return None
     def update_continuum_order(self):
         """ The continuum order to use in model fitting was changed. """
         self._get_selected_model().metadata["continuum_order"] \
             = int(self.combo_continuum.currentText())
         return None
+    def update_edit_manual_continuum_profile(self):  #Akshara edits
+        try:
+            value = float(self.edit_manual_continuum_profile.text())
+        except:
+            return None
+        selected_model = self._get_selected_model()
+        if selected_model is None:
+            return None
+        selected_model.metadata["manual_continuum"] = value
+        selected_model.metadata["continuum_order"] = -1
+        if hasattr(selected_model, "metadata"):
+            selected_model.metadata.pop("fitted_result", None)
+        self.update_spectrum_figure(redraw=True)
+        return None
+
     def clicked_checkbox_vrad_tolerance(self):
         """ The checkbox for velocity tolerance was clicked. """
         if self.checkbox_vrad_tolerance.isChecked():

@@ -47,7 +47,7 @@ def make_summary_plot(summary_figure, normalized_spectrum,
                   (0.33999999999999997, 0.82879999999999987, 0.86),
                   (0.37119999999999997, 0.33999999999999997, 0.86),
                   (0.86, 0.33999999999999997, 0.82879999999999987)]
-    hls_colors = ['426b81', '7dac9f', 'd18076', '903d6f']
+    hls_colors = ['#426b81', '#7dac9f', '#d18076', '#903d6f']  #Akshara edits
     # Load spectra
     spectra_objects = {}
     spectra_colors = {}
@@ -89,9 +89,6 @@ def make_summary_plot(summary_figure, normalized_spectrum,
             temp_lit.append( [str(_Tlit), spectra_colors[spec_name]] )
             temp_eff.append( [str(_Teff), spectra_colors[spec_name]] )
             
-        print( temp_lit)
-        print( temp_eff)
-
         coord = 100
         for i,(entrylit, entryeff) in enumerate(zip(temp_lit, temp_eff)):
             ax.annotate(entrylit[0], xy=(4858.33, 0), xytext=(40, coord),

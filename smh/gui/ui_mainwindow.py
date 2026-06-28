@@ -14,7 +14,7 @@ import yaml
 import numpy as np
 
 # Import functionality related to each tab
-import rv, normalization, summary, stellar_parameters, chemical_abundances, review
+import rv, normalization, summary, stellar_parameters, chemical_abundances, review, literature  #Akshara edits
 
 import smh
 #from balmer import BalmerLineFittingDialog
@@ -286,6 +286,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         self.stellar_parameters_tab.new_session_loaded()
         self.chemical_abundances_tab.new_session_loaded()
         self.review_tab.new_session_loaded()
+        self.literature_tab.new_session_loaded()  #Akshara edits
 
         self._update_window_title(os.path.basename(filenames[0]))
 
@@ -371,10 +372,12 @@ class Ui_MainWindow(QtGui.QMainWindow):
         self.tabs.setTabEnabled(3, True)
         self.tabs.setTabEnabled(4, True)
         self.tabs.setTabEnabled(5, True)
+        self.tabs.setTabEnabled(6, True)
         
         self.stellar_parameters_tab.new_session_loaded()
         self.chemical_abundances_tab.new_session_loaded()
         self.review_tab.new_session_loaded()
+        self.literature_tab.new_session_loaded()
         
         self._update_window_title(os.path.basename(self.session_path))
 
@@ -505,7 +508,8 @@ class Ui_MainWindow(QtGui.QMainWindow):
         window = TransitionsDialog(self.session, callbacks=[
             self.stellar_parameters_tab.new_session_loaded,
             self.chemical_abundances_tab.new_session_loaded,
-            self.review_tab.new_session_loaded
+            self.review_tab.new_session_loaded,
+            self.literature_tab.new_session_loaded
             ])
         window.exec_()
 
@@ -618,6 +622,10 @@ class Ui_MainWindow(QtGui.QMainWindow):
             = review.ReviewTab(self)
         self.tabs.addTab(self.review_tab, "Review")
 
+        # Create literature comparison tab  #Akshara edits
+        self.literature_tab = literature.LiteratureTab(self)
+        self.tabs.addTab(self.literature_tab, "Literature")
+
         # Disable all tabs except the first one.
         for i in range(self.tabs.count()):
             self.tabs.setTabEnabled(i, i == 0)
@@ -632,6 +640,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         self.stellar_parameters_tab.new_session_loaded()
         self.chemical_abundances_tab.new_session_loaded()
         self.review_tab.new_session_loaded()
+        self.literature_tab.new_session_loaded()  #Akshara edits
 
     def refresh_all_guis(self):
         raise NotImplementedError

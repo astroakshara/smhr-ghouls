@@ -107,16 +107,80 @@ class ReviewTab(QtGui.QWidget):
         # Reset the model (and its views)
         self.measurement_model.endResetModel()
     def refresh_plots(self):
+        sigma = self._get_sigma_to_plot()
+        self.plot1.sigma = sigma
+        self.plot2.sigma = sigma
+        self.plot3.sigma = sigma
         self.plot1.update_scatterplot(True)
         self.plot2.update_scatterplot(True)
         self.plot3.update_scatterplot(True)
         self.plot1.update_selected_points(True)
         self.plot2.update_selected_points(True)
         self.plot3.update_selected_points(True)
+        self.update_nlte_overlays()  #Akshara edits
     def refresh_selected_points(self):
         self.plot1.update_selected_points(True)
         self.plot2.update_selected_points(True)
         self.plot3.update_selected_points(True)
+
+    def _get_sigma_to_plot(self):  #Akshara edits
+        try:
+            return float(self.parent.stellar_parameters_tab.edit_sigma.text())
+        except Exception:
+            return 2.5
+
+    def update_nlte_overlays(self):  #Akshara edits
+        if not hasattr(self, "_nlte_overlay_artists"):
+            self._nlte_overlay_artists = []
+        for artist in self._nlte_overlay_artists:
+            try:
+                artist.remove()
+            except ValueError:
+                pass
+        self._nlte_overlay_artists = []
+
+        if self.parent.session is None:
+            return None
+        rows = np.arange(self.measurement_model.rowCount())
+        models = [model for model in self.measurement_model.get_models_from_rows(rows)
+                  if model.is_acceptable and not model.is_upper_limit
+                  and np.isfinite(model.abundance_nlte_filled)]
+        if len(models) == 0:
+            return None
+
+        sigma = self._get_sigma_to_plot()
+        for fig, xattr in [(self.plot1, "expot"),
+                           (self.plot2, "reduced_equivalent_width"),
+                           (self.plot3, "wavelength")]:
+            x = np.array([getattr(model, xattr) for model in models], dtype=float)
+            y = np.array([model.abundance_nlte_filled for model in models], dtype=float)
+            finite = np.isfinite(x*y)
+            if not np.any(finite):
+                continue
+
+            x, y = x[finite], y[finite]
+            color = "#1f77b4"
+            artist = fig.ax.scatter(x, y, marker="^", s=24,
+                                    facecolor="none", edgecolor=color,
+                                    linewidths=1.0, zorder=20)
+            self._nlte_overlay_artists.append(artist)
+
+            try:
+                m, b, medy, stdy, stdm, N = utils.fit_line(x, y)
+            except Exception as e:
+                logger.debug("Could not fit NLTE review overlay: {}".format(e))
+                continue
+
+            xlim = np.array(fig.ax.get_xlim())
+            line = fig.ax.plot(xlim, m*xlim + b, color=color, linestyle="--",
+                               linewidth=1.0, zorder=19)[0]
+            mean = fig.ax.axhline(medy, color=color, linestyle=":",
+                                  linewidth=1.0, zorder=18)
+            band = fig.ax.fill_between(xlim, medy - sigma*stdy,
+                                       medy + sigma*stdy, color=color,
+                                       alpha=0.08, lw=0, zorder=17)
+            self._nlte_overlay_artists.extend([line, mean, band])
+        return None
     def selected_measurement_changed(self):
         self.refresh_selected_points()
         if self.measurement_view is None or self.measurement_model is None: return None
@@ -148,7 +212,9 @@ class ReviewTab(QtGui.QWidget):
                                                     ["is_acceptable",
                                                      "wavelength","expot","loggf",
                                                      "equivalent_width","reduced_equivalent_width",
-                                                     "abundances","abundances_to_solar",
+                                                     "abundances","abundance_uncertainties",
+                                                     "abundance_nlte","abundance_nlte_filled",
+                                                     "nlte_delta","abundances_to_solar",
                                                      "is_upper_limit","user_flag"])
         self.measurement_model = MeasurementTableModelProxy(self)
         self.measurement_model.setSourceModel(self.full_measurement_model)

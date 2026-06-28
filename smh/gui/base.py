@@ -41,6 +41,8 @@ _allattrs = ["wavelength","expot","species","elements","loggf",
              "equivalent_width","equivalent_width_uncertainty",
              "reduced_equivalent_width",
              "abundances", "abundances_to_solar", "abundance_uncertainties",
+             "abundance_nlte", "abundance_nlte_filled",
+             "abundance_stellar_parameters", "nlte_delta",
              "is_acceptable", "is_upper_limit", "user_flag",
              "use_for_stellar_parameter_inference", "use_for_stellar_composition_inference",
              "measurement_type","fwhm"]
@@ -48,6 +50,8 @@ _labels = ["Wavelength $\lambda$",u"Excitation potential","Species","Element","l
            "Equivalent width", "Equivalent width error",
            r"$\log{EW}/\lambda$",
            u"log ε","[X/H]", u"σ(log ε)",
+           u"log ε NLTE", u"log ε NLTE filled",
+           u"log ε stellar parameters", "NLTE Δ",
            "Acceptable", "Upper Limit", "User Flag",
            "Use for Spectroscopic Stellar Parameters", "Use for Stellar Abundances",
            "Measurement Type", "FWHM"]
@@ -55,18 +59,21 @@ _short_labels = [u"λ",u"χ","ID","El.","loggf",
                  "EW", u"σ(EW)",
                  "REW",
                  "A(X)","[X/H]",u"σ(X)",
+                 "A(X) NLTE", "A(X) NLTE fill", "A(X) SP", u"ΔNLTE",
                  "", "ul", "flag",
                  "spflag", "abundflag","type", "FWHM"]
 _formats = [":.1f",":.2f",":.1f","",":.2f",
             ":.1f",":.1f",
             ":.2f",
             ":.2f",":.2f",":.2f",
+            ":.2f",":.2f",":.2f",":.2f",
             "","","","",
             "","",":.2f"]
 _dtypes = [float, float, float, object, float,
            float, float,
            float,
            float, float, float,
+           float, float, float, float,
            bool, bool, bool,
            bool, bool,
            object, float]
@@ -158,6 +165,8 @@ class SMHSpecDisplay(mpl.MPLWidget):
         self.ax_spectrum.set_xlabel(u"Wavelength (Å)")
         self.ax_spectrum.set_ylabel(r"Normalized flux")
         self.ax_spectrum.set_ylim(0, 1.2)
+        self.spectrum_ylim = (0, 1.2)
+        self.residual_abs_ylim = None
         self.ax_spectrum.yaxis.set_major_locator(MultipleLocator(0.2))
         self.ax_spectrum.yaxis.set_minor_locator(MultipleLocator(0.02))
         #self.ax_spectrum.set_yticks([0, 0.5, 1])
@@ -313,9 +322,25 @@ class SMHSpecDisplay(mpl.MPLWidget):
         ## Plot labeled lines
         self.label_lines(label_transitions, rv=label_rv)
 
+        self.apply_y_limits()  #Akshara edits
+
         if redraw: self.draw()
         
         return None
+    def set_y_limits(self, residual_abs=None, spectrum_ylim=None):  #Akshara edits
+        self.residual_abs_ylim = residual_abs
+        self.spectrum_ylim = spectrum_ylim
+        self.apply_y_limits()
+        self.draw()
+        return None
+
+    def apply_y_limits(self):
+        if self.residual_abs_ylim is not None:
+            self.ax_residual.set_ylim(-self.residual_abs_ylim, self.residual_abs_ylim)
+        if self.spectrum_ylim is not None:
+            self.ax_spectrum.set_ylim(self.spectrum_ylim)
+        return None
+
     def label_lines(self, transitions, label_elem=False,
                     ymin=None, ymax=None,
                     rv=None,
@@ -553,8 +578,11 @@ class SMHSpecDisplay(mpl.MPLWidget):
             -sigma, +sigma, facecolor="#CCCCCC", edgecolor="none", alpha=1)
 
         three_sigma = 3*np.median(sigma[np.isfinite(sigma)])
-        if np.isfinite(three_sigma):
-            self.ax_residual.set_ylim(-three_sigma, three_sigma)
+        if self.residual_abs_ylim is None:
+            if np.isfinite(three_sigma):
+                self.ax_residual.set_ylim(-three_sigma, three_sigma)
+        else:
+            self.ax_residual.set_ylim(-self.residual_abs_ylim, self.residual_abs_ylim)
         
         return True
     
@@ -920,25 +948,36 @@ class SMHScatterplot(mpl.MPLWidget):
                type(tablemodel)
         self.tableview = tableview
         self.tablemodel= tablemodel
-        assert self.xattr in self.tablemodel.attrs, (self.xattr, self.tablemodel.attrs)
-        assert self.yattr in self.tablemodel.attrs, (self.yattr, self.tablemodel.attrs)
-        self.xcol = self.tablemodel.attrs.index(self.xattr)
-        self.ycol = self.tablemodel.attrs.index(self.yattr)
+        assert self.xattr in self.allattrs, self.xattr
+        assert self.yattr in self.allattrs, self.yattr
+        self.xcol = self.tablemodel.attrs.index(self.xattr) \
+            if self.xattr in self.tablemodel.attrs else self.xattr
+        self.ycol = self.tablemodel.attrs.index(self.yattr) \
+            if self.yattr in self.tablemodel.attrs else self.yattr
         if self.exattr is None:
             self.excol = None
         else:
-            assert self.exattr in self.tablemodel.attrs, (self.exattr, self.tablemodel.attrs)
-            self.excol = self.tablemodel.attrs.index(self.exattr)
+            assert self.exattr in self.allattrs, self.exattr
+            self.excol = self.tablemodel.attrs.index(self.exattr) \
+                if self.exattr in self.tablemodel.attrs else self.exattr
         if self.eyattr is None:
             self.eycol = None
         else:
-            assert self.eyattr in self.tablemodel.attrs, (self.eyattr, self.tablemodel.attrs)
-            self.eycol = self.tablemodel.attrs.index(self.eyattr)
+            assert self.eyattr in self.allattrs, self.eyattr
+            self.eycol = self.tablemodel.attrs.index(self.eyattr) \
+                if self.eyattr in self.tablemodel.attrs else self.eyattr
         #logger.debug("Linked {} to {}/{}".format(self, self.tableview, self.tablemodel))
         #logger.debug("{}->{}, {}->{}".format(self.xattr, self.xcol, self.yattr, self.ycol))
         #if (self.exattr is not None) or (self.eyattr is not None):
         #    logger.debug("Err col: {}->{}, {}->{}".format(self.exattr, self.excol, self.eyattr, self.eycol))
     def _load_value_from_table(self, index):
+        if isinstance(index, tuple):
+            row, attr = index
+            value = self.tablemodel.get_data_column(attr, rows=[row])[0]
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return np.nan
         val = self.tablemodel.data(index, QtCore.Qt.DisplayRole)
         try:
             val = float(val)
@@ -961,23 +1000,27 @@ class SMHScatterplot(mpl.MPLWidget):
         
         spectral_models = self.tablemodel.get_models_from_rows(np.arange(Nrows))
         for i in range(Nrows):
-            ix = self._ix(i, self.xcol)
-            x = self._load_value_from_table(ix)
-            ix = self._ix(i, self.ycol)
-            y = self._load_value_from_table(ix)
+            x = self._load_value_from_table((i, self.xcol)) \
+                if isinstance(self.xcol, str) \
+                else self._load_value_from_table(self._ix(i, self.xcol))
+            y = self._load_value_from_table((i, self.ycol)) \
+                if isinstance(self.ycol, str) \
+                else self._load_value_from_table(self._ix(i, self.ycol))
             if self.excol is None:
                 # TODO: Add x-error, which is a function of exattr...
                 ex = np.nan
             else: # This will never be called (we don't use x-err)
-                ix = self._ix(i, self.excol)
-                ex = self._load_value_from_table(ix)
+                ex = self._load_value_from_table((i, self.excol)) \
+                    if isinstance(self.excol, str) \
+                    else self._load_value_from_table(self._ix(i, self.excol))
             if self.eycol is None:
                 # E. Holmbeck changed; just make sure it's right
                 #ey = np.nan
                 ey = spectral_models[i].abundance_uncertainties
             else:
-                ix = self._ix(i, self.eycol)
-                ey = self._load_value_from_table(ix)
+                ey = self._load_value_from_table((i, self.eycol)) \
+                    if isinstance(self.eycol, str) \
+                    else self._load_value_from_table(self._ix(i, self.eycol))
             
             xs.append(x)
             ys.append(y)
@@ -1034,7 +1077,19 @@ class SMHScatterplot(mpl.MPLWidget):
             x, y, ey = xs[valid], ys[valid], eys[valid]
             if np.all(np.isnan(x)): continue
             
-            m,b,medy,stdy,stdm,N = utils.fit_line(x, y, ey)
+            try:
+                m,b,medy,stdy,stdm,N = utils.fit_line(x, y, ey)
+            except Exception as e:
+                logger.debug("Could not fit scatterplot trend line: {}".format(e))
+                if linefit is not None:
+                    linefit.set_data([np.nan], [np.nan])
+                if linemean is not None:
+                    linemean.set_data([0, 1], [np.nan, np.nan])
+                if fillmean is not None:
+                    path = fillmean.get_paths()[0]
+                    v_x = np.hstack([0.0]*len(path.vertices))
+                    path.vertices = np.vstack([v_x, v_x]).T
+                continue
             
             if linefit is not None:
                 linefit.set_data(xlim, m*xlim + b)
@@ -1071,10 +1126,12 @@ class SMHScatterplot(mpl.MPLWidget):
         for i in rows:
             if self.do_not_select_unacceptable and skip_plot[i]:
                 continue
-            ix = self._ix(i, self.xcol)
-            x = self._load_value_from_table(ix)
-            ix = self._ix(i, self.ycol)
-            y = self._load_value_from_table(ix)
+            x = self._load_value_from_table((i, self.xcol)) \
+                if isinstance(self.xcol, str) \
+                else self._load_value_from_table(self._ix(i, self.xcol))
+            y = self._load_value_from_table((i, self.ycol)) \
+                if isinstance(self.ycol, str) \
+                else self._load_value_from_table(self._ix(i, self.ycol))
             xs.append(x)
             ys.append(y)
         self._selected_points.set_offsets(np.array([xs,ys]).T)
@@ -1812,8 +1869,9 @@ class MeasurementTableModelBase(QtCore.QAbstractTableModel):
                 QtCore.Qt.ItemIsUserCheckable
     
     
-class MeasurementSummaryTableModel(QtCore.QAbstractTableModel):
-    header = ["El.", "Species", "N", "A(X)", "σ(X)", "[X/H]", "[X/Fe]"]
+class MeasurementSummaryTableModel(QtCore.QAbstractTableModel):  #Akshara edits
+    header = ["El.", "Species", "N", "A(X)", "A(X) NLTE",
+              "σ(X)", "[X/H]", "[X/H] NLTE", "[X/Fe]", "[X/Fe] NLTE"]
     def __init__(self, parent, session, *args):
         super(MeasurementSummaryTableModel, self).__init__(parent, *args)
         self.parent = parent 
@@ -1822,8 +1880,11 @@ class MeasurementSummaryTableModel(QtCore.QAbstractTableModel):
     def summarize(self):
         if self.session is None:
             self.summary = {}
+            self.nlte_summary = {}
         else:
             self.summary = self.session.summarize_spectral_models(what_fe=self.what_fe)
+            self.nlte_summary = self.session.summarize_spectral_models(
+                what_fe=self.what_fe, use_nlte=True)
     def new_session(self, session):
         """
         Reset the table based on the new session
@@ -1879,6 +1940,8 @@ class MeasurementSummaryTableModel(QtCore.QAbstractTableModel):
         species = self.all_species[row]
         vals = self.summary[species]
         num_models, logeps, stdev, stderr, XH, XFe = vals
+        nlte_vals = self.nlte_summary.get(species, [np.nan]*6)
+        logeps_nlte, XH_nlte, XFe_nlte = nlte_vals[1], nlte_vals[4], nlte_vals[5]
         
         col = index.column()
         if col == 0:
@@ -1890,9 +1953,15 @@ class MeasurementSummaryTableModel(QtCore.QAbstractTableModel):
         elif col == 3:
             return "{:.2f}".format(logeps)
         elif col == 4:
-            return "{:.2f}".format(stdev)
+            return "{:.2f}".format(logeps_nlte)
         elif col == 5:
-            return "{:.2f}".format(XH)
+            return "{:.2f}".format(stdev)
         elif col == 6:
+            return "{:.2f}".format(XH)
+        elif col == 7:
+            return "{:.2f}".format(XH_nlte)
+        elif col == 8:
             return "{:.2f}".format(XFe)
+        elif col == 9:
+            return "{:.2f}".format(XFe_nlte)
         raise ValueError("row={} col={} species={}".format(row, col, species))

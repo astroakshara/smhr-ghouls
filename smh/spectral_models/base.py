@@ -252,6 +252,62 @@ class BaseSpectralModel(object):
         return None
 
     @property
+    def abundance_nlte(self):  #Akshara edits
+        return self.metadata.get("abundance_nlte", np.nan)
+
+    @property
+    def nlte_delta(self):
+        return self.metadata.get("nlte_delta", np.nan)
+
+    @property
+    def nlte_delta_filled(self):
+        delta = self.nlte_delta
+        if np.isfinite(delta):
+            return delta
+        try:
+            species = round(float(np.ravel(self.species)[0]), 1)
+        except Exception:
+            return np.nan
+        deltas = []
+        for model in self.session.spectral_models:
+            try:
+                model_species = round(float(np.ravel(model.species)[0]), 1)
+            except Exception:
+                continue
+            if model_species != species:
+                continue
+            model_delta = model.nlte_delta
+            if np.isfinite(model_delta):
+                deltas.append(model_delta)
+        if len(deltas) == 0:
+            return np.nan
+        return float(np.mean(deltas))
+
+    @property
+    def abundance_nlte_filled(self):
+        abundances = self.abundances
+        if abundances is None:
+            return np.nan
+        abundance = float(np.ravel(abundances)[0])
+        delta = self.nlte_delta_filled
+        if not np.isfinite(delta):
+            return np.nan
+        return abundance + delta
+
+    @property
+    def abundance_stellar_parameters(self):  #Akshara edits
+        mode = self.session.metadata.get("stellar_parameters", {}) \
+            .get("abundance_mode", "LTE")
+        if mode == "NLTE":
+            abundance = self.abundance_nlte_filled
+            if np.isfinite(abundance):
+                return abundance
+        abundances = self.abundances
+        if abundances is None:
+            return np.nan
+        return float(np.ravel(abundances)[0])
+
+    @property
     def expot(self):
         raise NotImplementedError
     

@@ -27,7 +27,7 @@ import astropy.table
 from astropy.io import ascii
 from .linelists import LineList
 from .utils import mkdtemp
-from . import (photospheres, radiative_transfer, specutils, isoutils, utils)
+from . import (photospheres, radiative_transfer, specutils, isoutils, utils, nlte)  #Akshara edits
 from .spectral_models import ProfileFittingModel, SpectralSynthesisModel
 from smh.photospheres.abundances import asplund_2009 as solar_composition
 from . import (smh_plotting, __version__)
@@ -1462,6 +1462,9 @@ class Session(BaseSession):
         spectral_model_indices = np.array(spectral_model_indices)
         transitions["equivalent_width"] = equivalent_widths
         transitions["abundance"] = abundances
+        transitions["nlte_delta"] = [spectral_model.metadata.get("nlte_delta", np.nan)
+                                   for spectral_model in spectral_models
+                                   if isinstance(spectral_model, ProfileFittingModel)]
         return transitions
 
     def optimize_stellar_parameters(self, **kwargs):
@@ -1491,6 +1494,9 @@ class Session(BaseSession):
         transitions = transitions[finite]
         logger.info("Optimizing with {} transitions".format(len(transitions)))
         
+        kwargs.setdefault("use_nlte_grid",
+            self.metadata["stellar_parameters"].get("abundance_mode") == "NLTE")
+
         # interpolator, do obj. function
         out = run_optimize_stellar_parameters(initial_guess, transitions, **kwargs)
         final_parameters = out[1]
@@ -1532,6 +1538,9 @@ class Session(BaseSession):
         transitions = transitions[finite]
         logger.info("Optimizing with {} transitions".format(len(transitions)))
         
+        kwargs.setdefault("use_nlte_grid",
+            self.metadata["stellar_parameters"].get("abundance_mode") == "NLTE")
+
         # interpolator, do obj. function
         out = run_optimize_feh(initial_guess, transitions, params_to_optimize, **kwargs)
         final_parameters = out[1]
@@ -1544,6 +1553,194 @@ class Session(BaseSession):
         
         self.set_stellar_parameters(new_Teff, new_logg, new_vt, new_MH)
         return None
+
+
+    def apply_mpia_nlte_corrections(self, spectral_models=None,  #Akshara edits
+                                    model_atmosphere=None,
+                                    species_to_correct=None,
+                                    only_stellar_parameters=False,
+                                    filter_spectral_models=None):
+        """
+        Fetch live NLTE abundance corrections for acceptable profile
+        measurements and store A(X)_NLTE and delta on each spectral model.
+
+        MPIA is queried first. For non-Fe lines where MPIA does not provide a
+        finite correction, INSPECT is used as a fallback when available. This is
+        post-processing only: LTE abundances and fits are not changed.
+        """
+
+        if spectral_models is None:
+            spectral_models = self.metadata["spectral_models"]
+
+        Teff, logg, vt, MH = self.stellar_parameters
+        alpha = self.metadata["stellar_parameters"].get("alpha", 0.4)
+        model_atmosphere = nlte.mpia_model_for_smhr(model_atmosphere)
+        mpia_species = {
+            8.0: 8.01, 12.0: 12.01, 14.0: 14.01,
+            20.0: 20.01, 20.1: 20.02, 22.0: 22.01,
+            22.1: 22.02, 24.0: 24.01, 25.0: 25.01,
+            26.0: 26.01, 26.1: 26.02, 27.0: 27.01
+        }
+        inspect_species = {
+            3.0: "Li", 8.0: "O", 11.0: "Na", 12.0: "Mg",
+            22.0: "Ti", 22.1: "Ti", 26.0: "Fe", 26.1: "Fe",
+            38.1: "Sr"
+        }
+        if species_to_correct is not None:
+            species_to_correct = set(species_to_correct)
+            mpia_species = dict((species, element)
+                for species, element in mpia_species.items()
+                if species in species_to_correct)
+            inspect_species = dict((species, element)
+                for species, element in inspect_species.items()
+                if species in species_to_correct)
+        models_by_species = dict((species, [])
+            for species in set(mpia_species) | set(inspect_species))
+
+        for spectral_model in spectral_models:
+            if not isinstance(spectral_model, ProfileFittingModel):
+                continue
+            if not spectral_model.is_acceptable or spectral_model.is_upper_limit:
+                continue
+            if only_stellar_parameters \
+            and not spectral_model.use_for_stellar_parameter_inference:
+                continue
+            if filter_spectral_models is not None \
+            and not filter_spectral_models(spectral_model):
+                continue
+            try:
+                species = np.round(float(np.ravel(spectral_model.species)[0]), 1)
+            except Exception:
+                continue
+            if species not in models_by_species:
+                continue
+            try:
+                abundance_lte = float(np.ravel(spectral_model.abundances)[0])
+            except Exception:
+                continue
+            if not np.isfinite(abundance_lte):
+                continue
+            if not np.isfinite(spectral_model.wavelength):
+                continue
+            models_by_species[species].append(spectral_model)
+
+        corrected = 0
+        total = sum(len(models) for models in models_by_species.values())
+        corrected_by_source = {}
+        for species, models in models_by_species.items():
+            if len(models) == 0:
+                continue
+
+            deltas = np.nan * np.ones(len(models))
+            abundance_nlte = np.nan * np.ones(len(models))
+            messages = [""] * len(models)
+            sources = [""] * len(models)
+            if species in mpia_species:
+                element = mpia_species[species]
+                transitions = LineList.vstack([model.transitions[0] for model in models])
+                abundances = np.array([float(np.ravel(model.abundances)[0])
+                                       for model in models], dtype=float)
+                equivalent_widths = np.array([model.equivalent_width
+                                              for model in models], dtype=float)
+                result = nlte.request_mpia_nlte_corrections(
+                    Teff, logg, MH, vt, alpha, element, abundances,
+                    equivalent_widths, transitions["loggf"],
+                    transitions["wavelength"], transitions["expot"],
+                    model_atmosphere=model_atmosphere)
+                deltas = result["delta"]
+                abundance_nlte = result["abundance_nlte"]
+                messages = result["message"]
+                sources = ["MPIA"] * len(models)
+
+            for i, model in enumerate(models):
+                delta = deltas[i]
+                message = messages[i]
+                source = sources[i]
+                if not np.isfinite(delta) and species not in (26.0, 26.1) \
+                and species in inspect_species:
+                    abundance_lte = float(np.ravel(model.abundances)[0])
+                    result = nlte.inspect_nlte_correction(
+                        inspect_species[species], model.wavelength,
+                        abundance_lte, Teff, logg, MH, vt)
+                    delta = result["delta"]
+                    message = result["message"]
+                    source = "INSPECT" if np.isfinite(delta) else source
+                abundance_lte = float(np.ravel(model.abundances)[0])
+                if np.isfinite(delta):
+                    line_abundance_nlte = abundance_lte + delta
+                    corrected += 1
+                    source_label = source or "NLTE"
+                    corrected_by_source[source_label] = \
+                        corrected_by_source.get(source_label, 0) + 1
+                elif np.isfinite(abundance_nlte[i]):
+                    line_abundance_nlte = abundance_nlte[i]
+                else:
+                    line_abundance_nlte = np.nan
+                model.metadata["nlte_delta"] = float(delta)
+                model.metadata["abundance_nlte"] = float(line_abundance_nlte)
+                model.metadata["nlte_source"] = source
+                model.metadata["nlte_model_atmosphere"] = model_atmosphere
+                model.metadata["nlte_message"] = message
+
+        logger.info("Stored NLTE corrections for {}/{} EW lines".format(
+            corrected, total))
+        return {
+            "corrected": corrected,
+            "total": total,
+            "by_source": corrected_by_source
+        }
+
+
+    def apply_mpia_nlte_fe_corrections(self, spectral_models=None,
+                                       model_atmosphere=None):
+        return self.apply_mpia_nlte_corrections(spectral_models,
+            model_atmosphere=model_atmosphere,
+            species_to_correct=(26.0, 26.1),
+            only_stellar_parameters=True)
+
+
+    def _abundance_cog_batched(self, transitions, batch_size=250, min_batch_size=8):  #Akshara edits
+        """Measure EW abundances in MOOG batches, preserving input order.
+
+        Some MOOG builds stop writing abfind summaries partway through large or
+        problematic line lists. Split failed chunks recursively so a small group
+        of bad lines does not prevent later acceptable lines from being measured.
+        """
+
+        rt_error = self.rt.utils.RTError
+
+        def measure_chunk(chunk):
+            if len(chunk) == 0:
+                return np.array([])
+            try:
+                return self.rt.abundance_cog(
+                    self.stellar_photosphere, chunk, twd=self.twd)
+            except rt_error as e:
+                if len(chunk) <= min_batch_size:
+                    logger.warn(
+                        "MOOG failed for {} EW lines from {:.3f} to {:.3f}; storing NaN abundances: {}".format(
+                            len(chunk), chunk[0]["wavelength"],
+                            chunk[-1]["wavelength"], e))
+                    return np.nan * np.ones(len(chunk))
+                midpoint = len(chunk) // 2
+                logger.warn(
+                    "MOOG failed for {} EW lines; retrying as {} and {} line chunks".format(
+                        len(chunk), midpoint, len(chunk) - midpoint))
+                return np.hstack((
+                    measure_chunk(chunk[:midpoint]),
+                    measure_chunk(chunk[midpoint:])))
+
+        if len(transitions) == 0:
+            return np.array([])
+
+        abundances = []
+        for start in range(0, len(transitions), batch_size):
+            stop = min(start + batch_size, len(transitions))
+            logger.info("Measuring EW abundances for lines {}-{} of {}".format(
+                start + 1, stop, len(transitions)))
+            abundances.append(measure_chunk(transitions[start:stop]))
+        return np.hstack(abundances)
+
 
     def measure_abundances(self, spectral_models=None, 
                            save_abundances=True,
@@ -1601,8 +1798,7 @@ class Session(BaseSession):
         finite = np.logical_and(np.isfinite(transitions["equivalent_width"]),
                                 transitions["equivalent_width"] > min_eqw)
         
-        abundances = self.rt.abundance_cog(
-            self.stellar_photosphere, transitions[finite], twd=self.twd)
+        abundances = self._abundance_cog_batched(transitions[finite])
 
         if calculate_uncertainties:
             # Increase EW by uncertainty and measure again
@@ -1614,8 +1810,8 @@ class Session(BaseSession):
             # Set a maximum EW of 9999, and later max abund uncertainty of 9
             transitions["equivalent_width"][transitions["equivalent_width"] > 9999] = 9999.
 
-            uncertainties = self.rt.abundance_cog(
-                self.stellar_photosphere, transitions[finite_uncertainty], twd=self.twd)
+            uncertainties = self._abundance_cog_batched(
+                transitions[finite_uncertainty])
             
             # These are not the same size. Make them the same size by filling with nan
             # Inelegant but works...
@@ -1634,13 +1830,17 @@ class Session(BaseSession):
                     zip(spectral_model_indices[finite], abundances, uncertainties):
                 spectral_models[index].metadata["fitted_result"][-1]["abundances"] = [abundance]
                 spectral_models[index].metadata["fitted_result"][-1]["abundance_uncertainties"] = [uncertainty]
+                spectral_models[index].metadata.pop("abundance_nlte", None)
+                spectral_models[index].metadata.pop("nlte_delta", None)
+                spectral_models[index].metadata.pop("nlte_source", None)
+                spectral_models[index].metadata.pop("nlte_message", None)
         logger.info("Time to measure {} abundances: {:.1f}".format(np.sum(finite), time.time()-start))
         return abundances, uncertainties if calculate_uncertainties else abundances
     
     
     def summarize_spectral_models(self, spectral_models=None, organize_by_element=False,
                                   use_weights = False, use_finite = True, what_fe = 1,
-                                  default_error = 0.1):
+                                  default_error = 0.1, use_nlte=False):
         """
         Loop through all spectral_models and return a summary dict
 
@@ -1686,8 +1886,14 @@ class Session(BaseSession):
         for spectral_model in spectral_models:
             if not spectral_model.is_acceptable or spectral_model.is_upper_limit: continue
             
-            abundances = spectral_model.abundances
-            if abundances is None: continue
+            if use_nlte:
+                abundance_nlte = spectral_model.abundance_nlte_filled
+                if not np.isfinite(abundance_nlte):
+                    continue
+                abundances = [abundance_nlte]
+            else:
+                abundances = spectral_model.abundances
+                if abundances is None: continue
             # Try to get the abundance uncertainties
             try:
                 errval = spectral_model.abundance_uncertainties or default_error
@@ -1778,20 +1984,28 @@ class Session(BaseSession):
     def export_abundance_table(self, filepath, use_weights=False):
         ## TODO: put in upper limits too.
         summary_dict = self.summarize_spectral_models(use_weights=use_weights)
+        nlte_summary_dict = self.summarize_spectral_models(
+            use_weights=use_weights, use_nlte=True)
         if filepath.endswith(".tex"):
             self._export_latex_abundance_table(filepath, summary_dict)
         else:
-            self._export_ascii_abundance_table(filepath, summary_dict)
+            self._export_ascii_abundance_table(filepath, summary_dict, nlte_summary_dict)
         logger.info("Exported to {}".format(filepath))
         return None
     def _export_latex_abundance_table(self, filepath, summary_dict):
         raise NotImplementedError
-    def _export_ascii_abundance_table(self, filepath, summary_dict):
-        out = np.zeros((len(summary_dict), 7))
+    def _export_ascii_abundance_table(self, filepath, summary_dict, nlte_summary_dict=None):  #Akshara edits
+        if nlte_summary_dict is None:
+            nlte_summary_dict = {}
+        out = np.zeros((len(summary_dict), 10))
         for i,(species, (N, logeps, stdev, stderr, XH, XFe)) in \
                 enumerate(iteritems(summary_dict)):
-            out[i,:] = [species, N, logeps, stdev, stderr, XH, XFe]
-        names = ["species", "N", "logeps", "stdev", "stderr", "[X/H]", "[X/Fe]"]
+            nlte = nlte_summary_dict.get(species, [np.nan]*6)
+            logeps_nlte, XH_nlte, XFe_nlte = nlte[1], nlte[4], nlte[5]
+            out[i,:] = [species, N, logeps, stdev, stderr, XH, XFe,
+                        logeps_nlte, XH_nlte, XFe_nlte]
+        names = ["species", "N", "logeps", "stdev", "stderr", "[X/H]", "[X/Fe]",
+                 "logeps_NLTE", "[X/H]_NLTE", "[X/Fe]_NLTE"]
         tab = astropy.table.Table(out, names=names)
         tab["N"].format = ".0f"
         tab["logeps"].format = "5.2f"
@@ -1799,6 +2013,9 @@ class Session(BaseSession):
         tab["stderr"].format = "5.2f"
         tab["[X/H]"].format = "5.2f"
         tab["[X/Fe]"].format = "5.2f"
+        tab["logeps_NLTE"].format = "5.2f"
+        tab["[X/H]_NLTE"].format = "5.2f"
+        tab["[X/Fe]_NLTE"].format = "5.2f"
         tab.write(filepath, format="ascii.fixed_width_two_line")
         return True #raise NotImplementedError
 
@@ -1808,8 +2025,11 @@ class Session(BaseSession):
         ## We'll eventually put in upper limits too.
         spectral_models = self.metadata.get("spectral_models", [])
         # Erika added EW sigma to output
-        names=["species", "wavelength", "expot", "loggf", "EW", "e_EW", "logeps", "e_logeps"]
-        dtypes=[(name, "f4") for name in names[:7]] + [(names[7], "U10")]
+        names=["species", "wavelength", "expot", "loggf", "EW", "e_EW",
+               "logeps", "e_logeps", "nlte_delta", "logeps_NLTE",
+               "logeps_NLTE_filled"]
+        dtypes=[(name, "f4") for name in names[:7]] + [(names[7], "U10")] \
+            + [(name, "f4") for name in names[8:]]
         # Convoluted, but we need to be able to print out upper limits
         linedata = np.array(np.zeros(len(spectral_models)) + np.nan, dtype=dtypes)
         for i,spectral_model in enumerate(spectral_models):
@@ -1830,6 +2050,9 @@ class Session(BaseSession):
                     logeps_err = f"{spectral_model.metadata['2_sigma_abundance_error']/2.0:6.3f}"
                 else:
                     logeps_err = "nan"
+                nlte_delta = np.nan
+                logeps_nlte = np.nan
+                logeps_nlte_filled = np.nan
                 #print("exporting synth",wavelength,species)
             elif isinstance(spectral_model, ProfileFittingModel):
                 line = spectral_model.transitions[0]
@@ -1844,19 +2067,27 @@ class Session(BaseSession):
                     e_EW = max(1000.*np.abs(spectral_model.metadata["fitted_result"][2]["equivalent_width"][1:]))
                     logeps = spectral_model.abundances[0]
                     logeps_err = f"{spectral_model.abundance_uncertainties or np.nan:6.3f}"
+                    nlte_delta = spectral_model.nlte_delta
+                    logeps_nlte = spectral_model.abundance_nlte
+                    logeps_nlte_filled = spectral_model.abundance_nlte_filled
                 except Exception as e:
                     print(e)
                     EW = np.nan
                     e_EW = np.nan
                     logeps = np.nan
                     logeps_err = "nan"
+                    nlte_delta = np.nan
+                    logeps_nlte = np.nan
+                    logeps_nlte_filled = np.nan
                 if EW is None: EW = np.nan
                 if logeps is None: logeps = np.nan
             else:
                 raise NotImplementedError
             # Erika added EW sigma to output
             try:
-                linedata[i] = tuple([species, wavelength, expot, loggf, EW, e_EW, logeps, logeps_err])
+                linedata[i] = tuple([species, wavelength, expot, loggf, EW, e_EW,
+                                      logeps, logeps_err, nlte_delta,
+                                      logeps_nlte, logeps_nlte_filled])
             except:
                 import pdb
                 pdb.set_trace()
@@ -1890,6 +2121,9 @@ class Session(BaseSession):
         tab["EW"].format = "6.2f"
         tab["e_EW"].format = "6.2f"
         tab["logeps"].format = "6.3f"
+        tab["nlte_delta"].format = "6.3f"
+        tab["logeps_NLTE"].format = "6.3f"
+        tab["logeps_NLTE_filled"].format = "6.3f"
         #tab["e_logeps"].format = "s"
         tab.write(filepath, format="ascii.fixed_width_two_line")
         return True

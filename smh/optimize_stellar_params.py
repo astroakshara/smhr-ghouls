@@ -22,6 +22,30 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def apply_nlte_corrections_to_abundances(transitions, abundances):  #Akshara edits
+    """
+    Add NLTE deltas to abundances, filling missing deltas with the mean delta
+    for the same species. Raw transition deltas remain unchanged.
+    """
+
+    if "nlte_delta" not in transitions.colnames:
+        return abundances
+
+    corrected = np.array(abundances, dtype=float).copy()
+    deltas = np.array(transitions["nlte_delta"], dtype=float)
+    species = np.round(np.array(transitions["species"], dtype=float), 1)
+    filled = deltas.copy()
+    for species_i in np.unique(species):
+        ii = species == species_i
+        finite = ii & np.isfinite(deltas)
+        missing = ii & ~np.isfinite(deltas)
+        if np.any(finite):
+            filled[missing] = np.mean(deltas[finite])
+    finite = np.isfinite(filled)
+    corrected[finite] += filled[finite]
+    return corrected
+
+
 def check_satisfies_tolerance(final_parameters_result, total_tolerance, individual_tolerances):
     acquired_total_tolerance = np.sum(np.array(final_parameters_result)**2)
     return acquired_total_tolerance < total_tolerance and \
@@ -214,6 +238,8 @@ def optimize_stellar_parameters(initial_guess, transitions, EWs=None,
         
         ## TODO: ADJUST ABUNDANCES TO ASPLUND?
         abundances = rt.abundance_cog(photosphere,transitions,twd=twd)
+        if use_nlte_grid:  #Akshara edits
+            abundances = apply_nlte_corrections_to_abundances(transitions, abundances)
         transitions["abundance"] = abundances
         
         ## Calculate slopes and differences that are being minimized
@@ -435,6 +461,8 @@ def optimize_stellar_parameters_2(initial_guess, transitions, EWs=None,
         photosphere.meta["stellar_parameters"]["microturbulence"] = vt
         
         abundances = rt.abundance_cog(photosphere,transitions,twd=twd)
+        if use_nlte_grid:  #Akshara edits
+            abundances = apply_nlte_corrections_to_abundances(transitions, abundances)
         transitions["abundance"] = abundances
         
         ## Calculate slopes and differences that are being minimized
@@ -646,6 +674,8 @@ def optimize_feh(initial_guess, transitions, params_to_optimize, EWs=None,
         
         ## TODO: ADJUST ABUNDANCES TO ASPLUND?
         abundances = rt.abundance_cog(photosphere,transitions,twd=twd)
+        if use_nlte_grid:  #Akshara edits
+            abundances = apply_nlte_corrections_to_abundances(transitions, abundances)
         transitions["abundance"] = abundances
         
         # E. Holmbeck changed so that dAdREW is w.r.t. FeII

@@ -120,6 +120,10 @@ class StellarParametersTab(QtGui.QWidget):
         lhs_layout.setSpacing(0)
         lhs_layout.setContentsMargins(0,0,0,0)
         
+        ## Add NLTE controls  #Akshara edits
+        hbox_layout = self._init_nlte_controls(parent)
+        lhs_layout.addLayout(hbox_layout)
+
         ## Add RT options
         grid_layout = self._init_rt_options(parent)
         lhs_layout.addLayout(grid_layout)
@@ -227,7 +231,8 @@ class StellarParametersTab(QtGui.QWidget):
             "metallicity": float(self.edit_metallicity.text()),
             "microturbulence": float(self.edit_xi.text()),
             #"numax": float(self.edit_numax.text()),
-            "alpha": float(self.edit_alpha.text())
+            "alpha": float(self.edit_alpha.text()),
+            "abundance_mode": "NLTE" if self.checkbox_use_nlte.isChecked() else "LTE"  #Akshara edits
         })
         return True
         
@@ -245,6 +250,9 @@ class StellarParametersTab(QtGui.QWidget):
         ]
         for widget, fmt, key in widget_info:
             widget.setText(fmt.format(self.parent.session.metadata["stellar_parameters"][key]))
+        self.checkbox_use_nlte.setChecked(
+            self.parent.session.metadata["stellar_parameters"].get("abundance_mode") == "NLTE")
+        self.update_mashonkina_vt_label()
 
         return None
         
@@ -264,64 +272,51 @@ class StellarParametersTab(QtGui.QWidget):
         logger.debug("Time taken: {}".format(time() - ta))
         return None
     def update_stellar_parameter_state_table(self):
-        """ Update the text labels """
-        ## Note: this uses self.measurement_model to get a good list of measurements.
-        ##       So, have to call measurement_model.reset() before doing this
-        ## Note: I have scrapped the Ti I/II in favor of hardcoding.
-        
-        ## Get data
-        # species, abundance, expot, rew
+        """Update LTE and NLTE Fe state labels."""  #Akshara edits
         acceptable = self.measurement_model.get_data_column("is_acceptable")
         not_upper_limit = np.logical_not(self.measurement_model.get_data_column("is_upper_limit"))
         species = self.measurement_model.get_data_column("species")
-        abundance = self.measurement_model.get_data_column("abundances")
         expot = self.measurement_model.get_data_column("expot")
         rew = self.measurement_model.get_data_column("reduced_equivalent_width")
-        ii1 = acceptable & (not_upper_limit) & (np.round(species,1)==26.0)
-        ii2 = acceptable & (not_upper_limit) & (np.round(species,1)==26.1)
-        chi1, eps1, REW1 = expot[ii1], abundance[ii1], rew[ii1]
-        chi2, eps2, REW2 = expot[ii2], abundance[ii2], rew[ii2]
-        
-        finite = np.isfinite(chi1*eps1*REW1)
-        chi1, eps1, REW1 = chi1[finite], eps1[finite], REW1[finite]
-        finite = np.isfinite(chi2*eps2*REW2)
-        chi2, eps2, REW2 = chi2[finite], eps2[finite], REW2[finite]
-        
-        ## Fit lines
-        try:
-            mchi1, bchi1, wmean1, eXH1, emchi1, N1 = utils.fit_line(chi1, eps1)
-        except Exception as e:
-            logger.debug(e)
-            mchi1, bchi1, wmean1, eXH1, emchi1, N1 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps1)
-        try:
-            mREW1, bREW1, wmean1, eXH1, emREW1, N1 = utils.fit_line(REW1, eps1)
-        except Exception as e:
-            logger.debug(e)
-            mREW1, bREW1, wmean1, eXH1, emREW1, N1 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps1)
-        try:
-            mchi2, bchi2, wmean2, eXH2, emchi2, N2 = utils.fit_line(chi2, eps2)
-        except Exception as e:
-            logger.debug(e)
-            mchi2, bchi2, wmean2, eXH2, emchi2, N2 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps2)
-        try:
-            mREW2, bREW2, wmean2, eXH2, emREW2, N2 = utils.fit_line(REW2, eps2)
-        except Exception as e:
-            logger.debug(e)
-            mREW2, bREW2, wmean2, eXH2, emREW2, N2 = np.nan, np.nan, np.nan, np.nan, np.nan, len(eps2)
-        
-        ## Update table
-        XH1 = wmean1 - solar_composition(26.0)
-        XH2 = wmean2 - solar_composition(26.1)
-        meanXH1 = np.median(eps1) - solar_composition(26.0)
-        meanXH2 = np.median(eps2) - solar_composition(26.1)
-        self.state_fe1_N.setText(u"Fe I ({})".format(N1))
-        self.state_fe1_XH.setText(u"{:.2f} ± {:.2f} ({:.2f})".format(XH1,eXH1,meanXH1))
-        self.state_fe1_dAdchi.setText(u"{:.3f} ± {:.3f}".format(mchi1, emchi1))
-        self.state_fe1_dAdREW.setText(u"{:.3f} ± {:.3f}".format(mREW1, emREW1))
-        self.state_fe2_N.setText(u"Fe II ({})".format(N2))
-        self.state_fe2_XH.setText(u"{:.2f} ± {:.2f} ({:.2f})".format(XH2,eXH2,meanXH2))
-        self.state_fe2_dAdchi.setText(u"{:.3f} ± {:.3f}".format(mchi2, emchi2))
-        self.state_fe2_dAdREW.setText(u"{:.3f} ± {:.3f}".format(mREW2, emREW2))
+        abundance_lte = self.measurement_model.get_data_column("abundances")
+        abundance_nlte = self.measurement_model.get_data_column("abundance_nlte_filled")
+
+        def summarize(mask, abundance):
+            chi, eps, REW = expot[mask], abundance[mask], rew[mask]
+            finite = np.isfinite(chi*eps*REW)
+            chi, eps, REW = chi[finite], eps[finite], REW[finite]
+            try:
+                mchi, bchi, wmean, eXH, emchi, N = utils.fit_line(chi, eps)
+            except Exception as e:
+                logger.debug(e)
+                mchi, wmean, eXH, emchi, N = np.nan, np.nan, np.nan, np.nan, len(eps)
+            try:
+                mREW, bREW, wmean, eXH, emREW, N = utils.fit_line(REW, eps)
+            except Exception as e:
+                logger.debug(e)
+                mREW, emREW = np.nan, np.nan
+            meanXH = np.median(eps) if len(eps) else np.nan
+            return mchi, mREW, wmean, eXH, emchi, emREW, meanXH, N
+
+        for specie, state_n, state_lte, state_nlte, state_chi, state_rew in [
+                (26.0, self.state_fe1_N, self.state_fe1_XH_lte, self.state_fe1_XH_nlte,
+                 self.state_fe1_dAdchi, self.state_fe1_dAdREW),
+                (26.1, self.state_fe2_N, self.state_fe2_XH_lte, self.state_fe2_XH_nlte,
+                 self.state_fe2_dAdchi, self.state_fe2_dAdREW)]:
+            mask = acceptable & not_upper_limit & (np.round(species, 1) == specie)
+            mchi, mREW, wmean, eXH, emchi, emREW, meanXH, N = summarize(mask, abundance_lte)
+            XH = wmean - solar_composition(specie)
+            meanXH = meanXH - solar_composition(specie)
+            mchi_nlte, mREW_nlte, wmean_nlte, eXH_nlte, emchi_nlte, emREW_nlte, meanXH_nlte, N_nlte = summarize(mask, abundance_nlte)
+            XH_nlte = wmean_nlte - solar_composition(specie)
+            meanXH_nlte = meanXH_nlte - solar_composition(specie)
+
+            label = "Fe I" if specie == 26.0 else "Fe II"
+            state_n.setText(u"{} ({})".format(label, N))
+            state_lte.setText(u"{:.2f} ± {:.2f} ({:.2f})".format(XH, eXH, meanXH))
+            state_nlte.setText(u"{:.2f} ± {:.2f} ({:.2f})".format(XH_nlte, eXH_nlte, meanXH_nlte))
+            state_chi.setText(u"{:.3f} ± {:.3f}".format(mchi, emchi))
+            state_rew.setText(u"{:.3f} ± {:.3f}".format(mREW, emREW))
         return None
     def refresh_plots(self):
         self.expotfig.sigma = float(self.edit_sigma.text())
@@ -345,6 +340,65 @@ class StellarParametersTab(QtGui.QWidget):
         index = self.measurement_model.mapToSource(proxy_index).row()
         model = self.parent.session.metadata["spectral_models"][index]
         return (model, proxy_index, index) if full_output else model
+
+    def _init_nlte_controls(self, parent):  #Akshara edits
+        hbox = QtGui.QHBoxLayout()
+        self.checkbox_use_nlte = QtGui.QCheckBox("Use NLTE", self)
+        self.checkbox_use_nlte.setChecked(False)
+        self.checkbox_use_nlte.stateChanged.connect(self.clicked_checkbox_use_nlte)
+        hbox.addWidget(self.checkbox_use_nlte)
+
+        hbox.addItem(QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.MinimumExpanding,
+            QtGui.QSizePolicy.Minimum))
+        return hbox
+
+    def clicked_checkbox_use_nlte(self):
+        if self.parent.session is not None:
+            self.parent.session.metadata["stellar_parameters"]["abundance_mode"] = \
+                "NLTE" if self.checkbox_use_nlte.isChecked() else "LTE"
+        self.update_stellar_parameter_state_table()
+        self.refresh_plots()
+        return None
+
+    def clicked_apply_nlte(self):
+        if self.parent.session is None or not self._check_for_spectral_models():
+            return None
+        self.measurement_model.beginResetModel()
+        nlte_summary = self.parent.session.apply_mpia_nlte_fe_corrections(
+            spectral_models=[model for model in self.parent.session.spectral_models
+                             if model.use_for_stellar_parameter_inference])
+        self.measurement_model.endResetModel()
+        self.update_stellar_parameter_state_table()
+        self.refresh_plots()
+        self._show_nlte_summary_dialog(nlte_summary, "Fe NLTE")
+        return None
+
+    def _show_nlte_summary_dialog(self, summary, title):
+        corrected = summary.get("corrected", 0) if isinstance(summary, dict) else summary
+        total = summary.get("total", 0) if isinstance(summary, dict) else 0
+        by_source = summary.get("by_source", {}) if isinstance(summary, dict) else {}
+        details = ""
+        if len(by_source):
+            details = "\n\n" + "\n".join("{}: {}".format(source, count)
+                for source, count in sorted(by_source.items()))
+        QtGui.QMessageBox.information(
+            self, title,
+            "NLTE querying finished.\n\nFound NLTE offsets for {} out of {} lines.{}"
+            .format(corrected, total, details))
+        return None
+
+    def update_mashonkina_vt_label(self, *args):  #Akshara edits
+        try:
+            teff = float(self.edit_teff.text())
+            logg = float(self.edit_logg.text())
+            fe_h = float(self.edit_metallicity.text())
+        except (AttributeError, ValueError):
+            vt = np.nan
+        else:
+            vt = 0.14 - 0.08*fe_h + 4.90*(teff/1e4) - 0.47*logg
+        if hasattr(self, "label_vt"):
+            self.label_vt.setText("vt  M17={:.2f}".format(vt))
+        return None
 
     def options(self):
         """ Open a GUI for the radiative transfer and solver options. """
@@ -384,7 +438,7 @@ class StellarParametersTab(QtGui.QWidget):
         ## use current state as initial guess
         logger.info("Setting [alpha/Fe]=0.4 to solve")
         self.update_stellar_parameter_session()
-        self.parent.session.optimize_feh(self.params_to_optimize, use_FeII=self.toggle_feII.isChecked())
+        self.parent.session.optimize_feh(self.params_to_optimize, use_FeII=True)
         #self.parent.session.metadata["stellar_parameters"]
         ## refresh everything
         # E. Holmbeck added 'new_session' again; trying to fix update problem
@@ -394,15 +448,7 @@ class StellarParametersTab(QtGui.QWidget):
         
         
     def _init_rt_options(self, parent):
-        # E. Holmbeck: toggle for Fe I vs. Fe II
         grid_layout = QtGui.QGridLayout()
-        label = QtGui.QLabel(self)
-        label.setText("Use lines for parameters")
-        grid_layout.addWidget(label, 0, 0, 1, 1) #int fromRow, int fromColumn, int rowSpan, int columnSpan, alignment
-        self.toggle_feII = MySwitch()
-        self.toggle_feII.setChecked(True)
-        grid_layout.addWidget(self.toggle_feII, 0, 0, 1, 3)#, alignment=QtCore.Qt.AlignCenter)
-        self.toggle_feII.clicked.connect(self.toggle_feII.setChecked(False))
         label = QtGui.QLabel(self)
         label.setText("Hold?")
         grid_layout.addWidget(label, 0, 2, 1, 1)
@@ -426,6 +472,7 @@ class StellarParametersTab(QtGui.QWidget):
         self.edit_teff.setValidator(
             QtGui2.QDoubleValidator(3000, 8000, 0, self.edit_teff))
         self.edit_teff.textChanged.connect(self._check_lineedit_state)
+        self.edit_teff.textChanged.connect(self.update_mashonkina_vt_label)
         grid_layout.addWidget(self.edit_teff, 1, 1)
         # E. Holmbeck added checkbox
         self.teff_const = QtGui.QCheckBox()
@@ -448,6 +495,7 @@ class StellarParametersTab(QtGui.QWidget):
             QtGui2.QDoubleValidator(-1, 6, 3, self.edit_logg))
         self.edit_logg.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
         self.edit_logg.textChanged.connect(self._check_lineedit_state)
+        self.edit_logg.textChanged.connect(self.update_mashonkina_vt_label)
         grid_layout.addWidget(self.edit_logg, 2, 1)
         # E. Holmbeck added checkbox
         self.logg_const = QtGui.QCheckBox()#"Hold constant")
@@ -470,6 +518,7 @@ class StellarParametersTab(QtGui.QWidget):
             QtGui2.QDoubleValidator(-5, 1, 3, self.edit_metallicity))
         self.edit_metallicity.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
         self.edit_metallicity.textChanged.connect(self._check_lineedit_state)
+        self.edit_metallicity.textChanged.connect(self.update_mashonkina_vt_label)
         grid_layout.addWidget(self.edit_metallicity, 3, 1)
         # E. Holmbeck added checkbox
         self.feh_const = QtGui.QCheckBox()
@@ -483,6 +532,7 @@ class StellarParametersTab(QtGui.QWidget):
         label = QtGui.QLabel(self)
         label.setText("vt")
         label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Minimum))
+        self.label_vt = label
 
         grid_layout.addWidget(label, 4, 0, 1, 1)
         self.edit_xi = QtGui.QLineEdit(self)
@@ -590,6 +640,11 @@ class StellarParametersTab(QtGui.QWidget):
         # TODO: just overwrite/rename the function
         self.btn_solve.clicked.connect(self.solve_feh)
         hbox.addWidget(self.btn_solve)
+
+        self.btn_apply_nlte = QtGui.QPushButton(self)
+        self.btn_apply_nlte.setText("NLTE")
+        self.btn_apply_nlte.clicked.connect(self.clicked_apply_nlte)
+        hbox.addWidget(self.btn_apply_nlte)
         
         # E. Holmbeck added these three lines.
         #self.btn_solve_feh = QtGui.QPushButton(self)
@@ -608,20 +663,23 @@ class StellarParametersTab(QtGui.QWidget):
             return label
         # Create Header
         create_label("Species", 0, 0, align=QtCore.Qt.AlignLeft)
-        create_label(u"〈[X/H]〉 weighted average (median)", 0, 1)
-        create_label(u"∂A/∂χ", 0, 2)
-        create_label(u"∂A/∂REW", 0, 3)
+        create_label(u"[X/H] LTE", 0, 1)
+        create_label(u"[X/H] NLTE", 0, 2)
+        create_label(u"dA/dchi", 0, 3)
+        create_label(u"dA/dREW", 0, 4)
         
         # Create State Labels
         self.state_fe1_N = create_label(u"Fe I (nan)", 1, 0, align=QtCore.Qt.AlignLeft)
-        self.state_fe1_XH = create_label(u"nan ± nan", 1, 1)
-        self.state_fe1_dAdchi = create_label(u"nan ± nan", 1, 2)
-        self.state_fe1_dAdREW = create_label(u"nan ± nan", 1, 3)
+        self.state_fe1_XH_lte = create_label(u"nan ± nan", 1, 1)
+        self.state_fe1_XH_nlte = create_label(u"nan ± nan", 1, 2)
+        self.state_fe1_dAdchi = create_label(u"nan ± nan", 1, 3)
+        self.state_fe1_dAdREW = create_label(u"nan ± nan", 1, 4)
         
         self.state_fe2_N = create_label(u"Fe II (nan)", 2, 0, align=QtCore.Qt.AlignLeft)
-        self.state_fe2_XH = create_label(u"nan ± nan", 2, 1)
-        self.state_fe2_dAdchi = create_label(u"nan ± nan", 2, 2)
-        self.state_fe2_dAdREW = create_label(u"nan ± nan", 2, 3)
+        self.state_fe2_XH_lte = create_label(u"nan ± nan", 2, 1)
+        self.state_fe2_XH_nlte = create_label(u"nan ± nan", 2, 2)
+        self.state_fe2_dAdchi = create_label(u"nan ± nan", 2, 3)
+        self.state_fe2_dAdREW = create_label(u"nan ± nan", 2, 4)
         
         return grid_layout
     def _init_measurement_table(self, parent):
@@ -630,6 +688,7 @@ class StellarParametersTab(QtGui.QWidget):
                                                      "wavelength","species","equivalent_width",
                                                      "equivalent_width_uncertainty",
                                                      "abundances","abundance_uncertainties",
+                                                     "abundance_nlte","nlte_delta",
                                                      "is_upper_limit","user_flag",
                                                      "expot","reduced_equivalent_width"])
         self.measurement_model = MeasurementTableModelProxy(self)
@@ -693,12 +752,12 @@ class StellarParametersTab(QtGui.QWidget):
                         {"ms":70,"markerfacecolor":"none","markeredgecolor":"red","ecolor":"red","lw":3},
                         {"ms":70,"markerfacecolor":"none","markeredgecolor":"red","ecolor":"red","lw":3},
                         ]
-        self.expotfig = SMHScatterplot(None, "expot", "abundances",
+        self.expotfig = SMHScatterplot(None, "expot", "abundance_stellar_parameters",
                                        tableview=self.measurement_view,
                                        filters=filters, point_styles=point_styles, error_styles=error_styles,
                                        linefit_styles=linefit_styles,linemean_styles=linemean_styles,
                                        do_not_select_unacceptable=True, sigma=2.5)
-        self.rewfig = SMHScatterplot(None, "reduced_equivalent_width", "abundances",
+        self.rewfig = SMHScatterplot(None, "reduced_equivalent_width", "abundance_stellar_parameters",
                                      tableview=self.measurement_view,
                                      filters=filters, point_styles=point_styles, error_styles=error_styles,
                                      linefit_styles=linefit_styles,linemean_styles=linemean_styles,
