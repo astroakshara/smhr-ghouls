@@ -39,7 +39,7 @@ Major changes are that we can now add NLTE corrections from MPIA/Inspect databas
   - NLTE linear fit line.
   - NLTE sigma band controlled by the Stellar Parameters `Sigma to plot` value.
 - Added a Literature tab after Review:
-  - reads `txt_table_recommended_v2021_MW.ts` (SAGA data).
+  - reads `txt_table_recommended_v2021_MW.tsv` (SAGA data).
   - plots SAGA literature abundance comparisons.
   - overlays the current star in LTE and NLTE.
   - refreshes from the current Review/abundance summary. (PS. Only works when you save the .smh file and reopen it, will fix this later)
