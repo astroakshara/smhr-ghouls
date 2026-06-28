@@ -14,7 +14,7 @@ Authors
 
 ## Summary of Changes past the smhr-rpa version:
 
-Major changes are that we can now add NLTE corrections from MPIA/Inspect database, and compare final abundances with a literature Milky Way halo catalogue. The rest are pretty much aesthetic changes. Here is a list:
+Major changes are that we can now query NLTE corrections from MPIA/Inspect database, and compare the final abundances with a literature Milky Way halo catalogue. The rest are pretty much aesthetic changes. Here is a list:
 
 - Added live NLTE querying support through MPIA, with INSPECT fallback for supported non-Fe species.
 - Added batching for MPIA requests so requests stay within the MPIA 99-line limit.
