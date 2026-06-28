@@ -10,6 +10,41 @@ Authors
  - Andrew R. Casey (Monash)
  - Alex Ji (University of Chicago)
  - Erika Holmbeck (Lawrence Livermore National Laboratory)
+ - Akshara Viswanathan (University of Victoria)
+
+Summary of Changes past the smhr-rpa version:
+
+Major changes are that we can now add NLTE corrections from MPIA/Inspect database, and compare final abundances with a literature Milky Way halo catalogue. The rest are pretty much aesthetic changes. Here is a list:
+
+- Added live NLTE querying support through MPIA, with INSPECT fallback for supported non-Fe species.
+- Added batching for MPIA requests so requests stay within the MPIA 99-line limit.
+- Stored NLTE abundance information separately from LTE abundance information:
+  - `nlte_delta`
+  - `abundance_nlte`
+  - filled NLTE abundance using the species-average correction when an individual line has no finite correction.
+- Added NLTE controls to the Stellar Parameters tab:
+  - `Use NLTE` mode for stellar-parameter solving.
+  - `NLTE` query button for Fe I and Fe II stellar-parameter lines.
+  - completion dialogue showing how many eligible lines received NLTE offsets.
+  - LTE and NLTE Fe abundance summaries.
+  - Mashonkina et al. 2017 (https://ui.adsabs.harvard.edu/abs/2017A%26A...604A.129M/abstract) microturbulence display.
+- Added NLTE controls to the Line Measurements tab:
+  - `NLTE` query button for acceptable abundance lines.
+  - completion dialogue showing how many eligible lines received NLTE offsets, including source counts.
+  - NLTE columns in the measurement table.
+- Added global plotting controls in the Line Measurements tab for residual and flux y-axis limits.
+- Added Review tab NLTE overlays:
+  - NLTE triangle markers.
+  - NLTE mean line.
+  - NLTE linear fit line.
+  - NLTE sigma band controlled by the Stellar Parameters `Sigma to plot` value.
+- Added a Literature tab after Review:
+  - reads `txt_table_recommended_v2021_MW.ts` (SAGA data).
+  - plots SAGA literature abundance comparisons.
+  - overlays the current star in LTE and NLTE.
+  - refreshes from the current Review/abundance summary. (PS. Only works when you save the .smh file and reopen it, will fix this later)
+- Updated exported abundance tables to include NLTE correction and final NLTE abundance columns.
+- Added robust EW abundance measurement batching around MOOG `abfind` calls (this is only an issue if you have a linelist with lines that are way too close to each other).
 
 Installation
 ------------
