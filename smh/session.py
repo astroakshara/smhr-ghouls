@@ -28,6 +28,7 @@ from astropy.io import ascii
 from .linelists import LineList
 from .utils import mkdtemp
 from . import (photospheres, radiative_transfer, specutils, isoutils, utils, nlte)  #Akshara edits
+from . import carbon_corrections  #Akshara edits
 from .spectral_models import ProfileFittingModel, SpectralSynthesisModel
 from smh.photospheres.abundances import asplund_2009 as solar_composition
 from . import (smh_plotting, __version__)
@@ -1555,18 +1556,93 @@ class Session(BaseSession):
         return None
 
 
+    def _nlte_target_line(self, spectral_model, effective_temperature=5000.):  #Akshara edits
+        """
+        Return the (species, wavelength, expot, loggf) of the line that should
+        be used when querying NLTE corrections for a spectral model.
+
+        For EW (profile) models this is the single fitted transition. For
+        synthesis models it is the strongest transition of the first measured
+        element's species (line strength ~ loggf - theta * expot), preferring
+        transitions within 0.5 A of the labelled synthesis wavelength.
+        Returns None if no suitable line can be found.
+        """
+        if isinstance(spectral_model, ProfileFittingModel):  #Akshara edits
+            try:
+                species = np.round(float(np.ravel(spectral_model.species)[0]), 1)
+                line = spectral_model.transitions[0]
+                return (species, float(spectral_model.wavelength),
+                        float(line["expot"]), float(line["loggf"]))
+            except Exception:
+                return None
+
+        if not isinstance(spectral_model, SpectralSynthesisModel):  #Akshara edits
+            return None
+        try:
+            # Only the first measured element is NLTE-corrected (same element
+            # that abundance_nlte_filled and the summaries use).
+            target_species = [np.round(float(s), 1)
+                              for s in spectral_model.species[0]]
+            transitions = spectral_model.transitions
+            line_species = np.array([int(float(s)*10)/10.
+                                     for s in transitions["species"]])
+            line_species = np.round(line_species, 1)
+            wavelengths = np.array(transitions["wavelength"], dtype=float)
+            expots = np.array(transitions["expot"], dtype=float)
+            loggfs = np.array(transitions["loggf"], dtype=float)
+        except Exception:
+            return None
+
+        match = np.isin(line_species, target_species) \
+            & np.isfinite(wavelengths) & np.isfinite(loggfs)
+        if not np.any(match):
+            return None
+
+        label_wavelength = spectral_model.metadata.get("wavelength", None)
+        if label_wavelength is not None:
+            try:
+                near = match & (np.abs(wavelengths - float(label_wavelength)) <= 0.5)
+                if np.any(near):
+                    match = near
+            except Exception:
+                pass
+
+        theta = 5040. / effective_temperature \
+            if np.isfinite(effective_temperature) and effective_temperature > 0 else 1.0
+        strength = loggfs - theta * np.where(np.isfinite(expots), expots, 0.)
+        indices = np.where(match)[0]
+        best = indices[np.argmax(strength[indices])]
+        query_wavelength = float(wavelengths[best])
+        # Use the labelled central wavelength shown in the table (not a
+        # hyperfine/isotope component) when it matches this species  #Akshara edits
+        if label_wavelength is not None:
+            try:
+                if np.abs(float(label_wavelength) - query_wavelength) <= 0.5:
+                    query_wavelength = float(label_wavelength)
+            except Exception:
+                pass
+        return (float(line_species[best]), query_wavelength,
+                float(expots[best]), float(loggfs[best]))
+
+
     def apply_mpia_nlte_corrections(self, spectral_models=None,  #Akshara edits
                                     model_atmosphere=None,
                                     species_to_correct=None,
                                     only_stellar_parameters=False,
-                                    filter_spectral_models=None):
+                                    filter_spectral_models=None,
+                                    include_synthesis=True):
         """
-        Fetch live NLTE abundance corrections for acceptable profile
-        measurements and store A(X)_NLTE and delta on each spectral model.
+        Fetch live NLTE abundance corrections for acceptable EW (profile) and
+        synthesis measurements and store A(X)_NLTE and delta on each
+        spectral model.
 
         MPIA is queried first. For non-Fe lines where MPIA does not provide a
         finite correction, INSPECT is used as a fallback when available. This is
         post-processing only: LTE abundances and fits are not changed.
+
+        For synthesis models, the correction is computed for the strongest
+        line of the first measured element's species inside the synthesis
+        (see `_nlte_target_line`) and applied to that element's abundance.
         """
 
         if spectral_models is None:
@@ -1594,11 +1670,14 @@ class Session(BaseSession):
             inspect_species = dict((species, element)
                 for species, element in inspect_species.items()
                 if species in species_to_correct)
+        # Each entry is (spectral_model, target_line)  #Akshara edits
         models_by_species = dict((species, [])
             for species in set(mpia_species) | set(inspect_species))
 
+        model_types = (ProfileFittingModel, SpectralSynthesisModel) \
+            if include_synthesis else (ProfileFittingModel, )  #Akshara edits
         for spectral_model in spectral_models:
-            if not isinstance(spectral_model, ProfileFittingModel):
+            if not isinstance(spectral_model, model_types):  #Akshara edits
                 continue
             if not spectral_model.is_acceptable or spectral_model.is_upper_limit:
                 continue
@@ -1608,10 +1687,10 @@ class Session(BaseSession):
             if filter_spectral_models is not None \
             and not filter_spectral_models(spectral_model):
                 continue
-            try:
-                species = np.round(float(np.ravel(spectral_model.species)[0]), 1)
-            except Exception:
+            target_line = self._nlte_target_line(spectral_model, Teff)  #Akshara edits
+            if target_line is None:
                 continue
+            species, wavelength = target_line[0], target_line[1]
             if species not in models_by_species:
                 continue
             try:
@@ -1620,16 +1699,20 @@ class Session(BaseSession):
                 continue
             if not np.isfinite(abundance_lte):
                 continue
-            if not np.isfinite(spectral_model.wavelength):
+            if not np.isfinite(wavelength):
                 continue
-            models_by_species[species].append(spectral_model)
+            models_by_species[species].append((spectral_model, target_line))
 
         corrected = 0
         total = sum(len(models) for models in models_by_species.values())
         corrected_by_source = {}
-        for species, models in models_by_species.items():
-            if len(models) == 0:
+        corrected_by_type = {}  #Akshara edits
+        total_by_type = {}  #Akshara edits
+        for species, entries in models_by_species.items():  #Akshara edits
+            if len(entries) == 0:
                 continue
+            models = [entry[0] for entry in entries]  #Akshara edits
+            target_lines = [entry[1] for entry in entries]  #Akshara edits
 
             deltas = np.nan * np.ones(len(models))
             abundance_nlte = np.nan * np.ones(len(models))
@@ -1637,16 +1720,20 @@ class Session(BaseSession):
             sources = [""] * len(models)
             if species in mpia_species:
                 element = mpia_species[species]
-                transitions = LineList.vstack([model.transitions[0] for model in models])
+                # Use the target line of each model (works for EW and synth)  #Akshara edits
+                line_wavelengths = np.array([line[1] for line in target_lines], dtype=float)
+                line_expots = np.array([line[2] for line in target_lines], dtype=float)
+                line_loggfs = np.array([line[3] for line in target_lines], dtype=float)
                 abundances = np.array([float(np.ravel(model.abundances)[0])
                                        for model in models], dtype=float)
-                equivalent_widths = np.array([model.equivalent_width
-                                              for model in models], dtype=float)
+                equivalent_widths = np.array(
+                    [model.equivalent_width if model.equivalent_width is not None
+                     else np.nan for model in models], dtype=float)  #Akshara edits
                 result = nlte.request_mpia_nlte_corrections(
                     Teff, logg, MH, vt, alpha, element, abundances,
-                    equivalent_widths, transitions["loggf"],
-                    transitions["wavelength"], transitions["expot"],
-                    model_atmosphere=model_atmosphere)
+                    equivalent_widths, line_loggfs,
+                    line_wavelengths, line_expots,
+                    model_atmosphere=model_atmosphere)  #Akshara edits
                 deltas = result["delta"]
                 abundance_nlte = result["abundance_nlte"]
                 messages = result["message"]
@@ -1656,12 +1743,20 @@ class Session(BaseSession):
                 delta = deltas[i]
                 message = messages[i]
                 source = sources[i]
+                line_wavelength = target_lines[i][1]  #Akshara edits
+                model_type = "synthesis" if isinstance(model, SpectralSynthesisModel) \
+                    else "EW"  #Akshara edits
+                total_by_type[model_type] = total_by_type.get(model_type, 0) + 1
                 if not np.isfinite(delta) and species not in (26.0, 26.1) \
                 and species in inspect_species:
                     abundance_lte = float(np.ravel(model.abundances)[0])
-                    result = nlte.inspect_nlte_correction(
-                        inspect_species[species], model.wavelength,
-                        abundance_lte, Teff, logg, MH, vt)
+                    try:  #Akshara edits
+                        result = nlte.inspect_nlte_correction(
+                            inspect_species[species], line_wavelength,
+                            abundance_lte, Teff, logg, MH, vt)
+                    except Exception as e:  #Akshara edits
+                        result = {"delta": np.nan,
+                                  "message": "INSPECT request failed: {}".format(e)}
                     delta = result["delta"]
                     message = result["message"]
                     source = "INSPECT" if np.isfinite(delta) else source
@@ -1672,6 +1767,8 @@ class Session(BaseSession):
                     source_label = source or "NLTE"
                     corrected_by_source[source_label] = \
                         corrected_by_source.get(source_label, 0) + 1
+                    corrected_by_type[model_type] = \
+                        corrected_by_type.get(model_type, 0) + 1  #Akshara edits
                 elif np.isfinite(abundance_nlte[i]):
                     line_abundance_nlte = abundance_nlte[i]
                 else:
@@ -1681,14 +1778,288 @@ class Session(BaseSession):
                 model.metadata["nlte_source"] = source
                 model.metadata["nlte_model_atmosphere"] = model_atmosphere
                 model.metadata["nlte_message"] = message
+                model.metadata["nlte_species"] = float(species)  #Akshara edits
+                model.metadata["nlte_wavelength"] = float(line_wavelength)  #Akshara edits
 
-        logger.info("Stored NLTE corrections for {}/{} EW lines".format(
-            corrected, total))
+        logger.info("Stored NLTE corrections for {}/{} lines ({})".format(
+            corrected, total, ", ".join("{}: {}/{}".format(
+                key, corrected_by_type.get(key, 0), value)
+                for key, value in sorted(total_by_type.items()))))  #Akshara edits
         return {
             "corrected": corrected,
             "total": total,
-            "by_source": corrected_by_source
+            "by_source": corrected_by_source,
+            "by_type": corrected_by_type,  #Akshara edits
+            "total_by_type": total_by_type  #Akshara edits
         }
+
+
+    def apply_nlite_nlte_corrections(self, grid_overrides=None,
+                                     use_preferred_grids=True,
+                                     only_missing=False, spectral_models=None,
+                                     use_out_of_grid=False,
+                                     diagnose_out_of_grid=True):  #Akshara edits
+        """
+        Query NLiTE (https://nlite.pythonanywhere.com/) for mean, per-species
+        NLTE corrections based on Teff, logg, [Fe/H] and the LTE [X/H] of each
+        species, and store them in self.metadata["nlte_element_corrections"].
+
+        The NLiTE correction is kept separately from the line-by-line
+        (MPIA/INSPECT) corrections so the two can be compared. When building
+        NLTE abundances, a line's delta is (1) its own MPIA/INSPECT delta,
+        else (2) the mean line-by-line delta of that species, else (3) the
+        NLiTE correction (only if within the NLiTE grid).
+
+        :param grid_overrides: [optional]
+            {element or NLiTE label: grid number}, e.g. {"Na": 4, "BaII": 3}.
+            Takes priority over the preferred grids.
+        :param use_preferred_grids: [optional]
+            If True (default), use nlte.NLITE_PREFERRED_GRIDS (falling back to
+            the next listed grid when the star is outside a grid); otherwise
+            use the NLiTE reference (1) grids.
+        :param only_missing: [optional]
+            If True, only query species with no line-by-line correction.
+            Default False: query every species, for comparison.
+        :param use_out_of_grid: [optional]
+            If False (default), corrections flagged by NLiTE as outside the
+            grid are stored but not used for the NLTE abundances.
+        :param diagnose_out_of_grid: [optional]
+            If True (default), work out which parameter(s) put the star
+            outside a grid (nlte.nlite_diagnose_out_of_grid; one extra NLiTE
+            request per affected species).  #Akshara edits
+        """
+
+        if spectral_models is None:
+            spectral_models = self.metadata.get("spectral_models", [])
+        grid_overrides = dict(grid_overrides or {})
+        Teff, logg, vt, MH = self.stellar_parameters
+        summary = self.summarize_spectral_models(spectral_models)
+
+        # Species that already have line-by-line corrections, and the line
+        # wavelengths of each species (used to choose the Al grid).
+        has_line_delta = set()
+        wavelengths_by_species = {}
+        for model in spectral_models:
+            if not model.is_acceptable or model.is_upper_limit:
+                continue
+            species = model.nlte_species
+            if np.isfinite(model.nlte_delta):
+                has_line_delta.add(species)
+            try:
+                wavelengths_by_species.setdefault(species, []).append(
+                    float(model.wavelength))
+            except Exception:
+                pass
+
+        labels = {}
+        skipped = []
+        for species, values in summary.items():
+            species = round(float(species), 1)
+            if species >= 100 and species != 106.0:  # only CH among molecules
+                continue
+            label = nlte.nlite_label(species)
+            if only_missing and species in has_line_delta:
+                skipped.append(label)
+                continue
+            XH = values[4]
+            if not np.isfinite(XH):
+                continue
+            labels[label] = (species, XH)
+
+        def _grids_for(label):
+            species = labels[label][0]
+            element = "C" if label == "CH" \
+                else utils.species_to_element(species).split()[0]
+            for key in (label, element):
+                if key in grid_overrides:
+                    return [int(grid_overrides[key])]
+            if not use_preferred_grids:
+                return [1]
+            grids = list(nlte.NLITE_PREFERRED_GRIDS.get(label, [1]))
+            if label == "AlI":
+                wavelengths = wavelengths_by_species.get(species, [])
+                if len(wavelengths) and np.all(np.array(wavelengths) > 5000):
+                    grids = [nlte.NLITE_AL_SUBORDINATE_GRID]
+            return grids
+
+        grid_lists = dict((label, _grids_for(label)) for label in labels)
+        results, errors, references = {}, [], []
+        pending = dict((label, 0) for label in labels)  # label -> index into grid list
+        while len(pending):
+            # Group: grid 1 -> one "all elements" request; others one by one
+            batch_default = dict((label, labels[label][1]) for label, i in pending.items()
+                                 if grid_lists[label][i] == 1)
+            requests_to_make = []
+            if len(batch_default):
+                requests_to_make.append((None, batch_default))
+            for label, i in pending.items():
+                if grid_lists[label][i] != 1:
+                    requests_to_make.append((grid_lists[label][i],
+                                             {label: labels[label][1]}))
+            next_pending = {}
+            for grid, abundances_xh in requests_to_make:
+                try:
+                    result = nlte.nlite_nlte_corrections(
+                        Teff, logg, MH, abundances_xh, grid=grid)
+                except Exception as e:
+                    errors.append("{}: {}".format(
+                        "reference grids" if grid is None else
+                        "{} grid {}".format(list(abundances_xh)[0], grid), e))
+                    continue
+                references.append(result["references"])
+                for label in abundances_xh:
+                    correction = result["corrections"].get(label)
+                    if correction is None:
+                        continue
+                    correction["grid"] = 1 if grid is None else grid
+                    i = pending[label]
+                    # Keep the first in-grid result; otherwise try the next grid
+                    if label not in results or (correction["in_grid"]
+                                                and not results[label]["in_grid"]):
+                        results[label] = correction
+                    if not correction["in_grid"] and i + 1 < len(grid_lists[label]):
+                        next_pending[label] = i + 1
+            pending = next_pending
+
+        stored = self.metadata.setdefault("nlte_element_corrections", {})
+        applied, out_of_grid, no_grid, fell_back = [], [], [], []
+        for label, (species, XH) in labels.items():
+            key = "{:.1f}".format(species)
+            if label not in results:
+                stored.pop(key, None)
+                no_grid.append(label)
+                continue
+            correction = results[label]
+            # Explain which parameter(s) push the star out of a grid  #Akshara edits
+            def _diagnose(grid):
+                if not diagnose_out_of_grid:
+                    return ""
+                try:
+                    return nlte.nlite_diagnose_out_of_grid(
+                        Teff, logg, MH, label, XH, grid=grid)["message"]
+                except Exception as e:
+                    logger.debug("Could not diagnose NLiTE grid limits for "
+                                 "{}: {}".format(label, e))
+                    return "could not determine ({})".format(e)
+            if correction["grid"] != grid_lists[label][0]:
+                reason = _diagnose(grid_lists[label][0])
+                correction["preferred_grid_reason"] = reason
+                fell_back.append("{} (grid {} -> {}){}".format(
+                    label, grid_lists[label][0], correction["grid"],
+                    ": " + reason if reason else ""))
+            if not correction["in_grid"]:
+                correction["out_of_grid_reason"] = _diagnose(correction["grid"])
+            correction.update({
+                "label": label,
+                "XH_lte": float(XH),
+                "preferred_grids": grid_lists[label],
+                "source": "NLiTE {} grid {}".format(label, correction["grid"]),
+                "stellar_parameters": (Teff, logg, vt, MH),
+                "use": bool(correction["in_grid"] or use_out_of_grid),
+            })
+            stored[key] = correction
+            if correction["use"]:
+                applied.append(label)
+            else:
+                out_of_grid.append(label)
+        if len(references):
+            self.metadata["nlte_element_references"] = "\n\n".join(
+                [ref for ref in dict.fromkeys(references) if ref])
+
+        logger.info("Stored NLiTE corrections for {}/{} species".format(
+            len(applied), len(labels)))
+        return {
+            "applied": applied,
+            "out_of_grid": out_of_grid,
+            "no_grid": no_grid,
+            "fell_back": fell_back,
+            "skipped_line_by_line": skipped,
+            "has_line_by_line": [nlte.nlite_label(s) for s in has_line_delta
+                                 if np.isfinite(s)],
+            "errors": errors,
+            "corrections": dict((label, results[label]) for label in results),
+        }
+
+
+    def apply_carbon_evolutionary_correction(self, n_samples=100):  #Akshara edits
+        """
+        Evolutionary correction to the observed (LTE) [C/Fe] from
+        Placco et al. (2014), via https://vplacco.pythonanywhere.com/.
+
+        Uses the session log(g), the measured [Fe/H] (Fe I or Fe II following
+        the "what_fe" setting; model [M/H] if Fe is not measured) and the LTE
+        [C/Fe] of each carbon species measured (CH = 106.0 and/or C I = 6.0).
+        Uncertainties: log(g) from the stellar-parameter errors, [Fe/H] and
+        [C/Fe] from the line-to-line scatter, each defaulting to 0.1.
+
+        The correction is stored per species in
+        self.metadata["carbon_evolutionary_corrections"]; LTE abundances are
+        not changed. It is defined on the observed LTE [C/Fe], so it is
+        independent of (and additive with) the NLTE correction:
+        [C/Fe]_final = [C/Fe]_LTE + delta_evol + delta_NLTE.
+        """
+
+        Teff, logg, vt, MH = self.stellar_parameters
+        what_fe = self.setting("what_fe", 1)
+        summary = self.summarize_spectral_models(what_fe=what_fe)
+        fe_key = 26.1 if what_fe == 2 else 26.0
+        if fe_key in summary and np.isfinite(summary[fe_key][4]):
+            FeH, e_FeH = summary[fe_key][4], summary[fe_key][2]
+            feh_source = "[Fe {}/H]".format("II" if what_fe == 2 else "I")
+        else:
+            FeH, e_FeH = MH, np.nan
+            feh_source = "model [M/H] (Fe not measured)"
+        try:
+            e_logg = self.stellar_parameters_err[1]
+        except Exception:
+            e_logg = np.nan
+
+        stored = self.metadata.setdefault("carbon_evolutionary_corrections", {})
+        results, errors = {}, []
+        for species in (106.0, 6.0):
+            if species not in summary:
+                continue
+            N, logeps, stdev, stderr, XH, XFe = summary[species]
+            label = "CH" if species == 106.0 else "C I"
+            if not np.isfinite(XFe):
+                XFe = XH - FeH  # Fe not measured: use model metallicity
+            if not np.isfinite(XFe):
+                errors.append("{}: no finite [C/Fe]".format(label))
+                continue
+            try:
+                result = carbon_corrections.placco_carbon_correction(
+                    logg, FeH, XFe, e_logg=e_logg, e_feh=e_FeH, e_cfe=stdev,
+                    n_samples=n_samples)
+            except Exception as e:
+                errors.append("{}: {}".format(label, e))
+                continue
+            result.update({"label": label, "feh_source": feh_source,
+                           "cfe_lte": float(XFe),
+                           "stellar_parameters": (Teff, logg, vt, MH)})
+            stored["{:.1f}".format(species)] = result
+            results[label] = result
+
+        logger.info("Stored carbon evolutionary corrections for {}".format(
+            ", ".join(results) or "no species"))
+        return {"results": results, "errors": errors}
+
+
+    def carbon_correction(self, species):  #Akshara edits
+        """ Stored Placco+14 evolutionary correction dict for a species, or None. """
+        try:
+            return self.metadata.get("carbon_evolutionary_corrections", {}).get(
+                "{:.1f}".format(round(float(species), 1)))
+        except Exception:
+            return None
+
+
+    def nlite_correction(self, species):  #Akshara edits
+        """ Stored NLiTE correction dict for a species, or None. """
+        try:
+            return self.metadata.get("nlte_element_corrections", {}).get(
+                "{:.1f}".format(round(float(species), 1)))
+        except Exception:
+            return None
 
 
     def apply_mpia_nlte_fe_corrections(self, spectral_models=None,
@@ -1696,7 +2067,8 @@ class Session(BaseSession):
         return self.apply_mpia_nlte_corrections(spectral_models,
             model_atmosphere=model_atmosphere,
             species_to_correct=(26.0, 26.1),
-            only_stellar_parameters=True)
+            only_stellar_parameters=True,
+            include_synthesis=False)  #Akshara edits: stellar-parameter solving only uses EW lines
 
 
     def _abundance_cog_batched(self, transitions, batch_size=250, min_batch_size=8):  #Akshara edits
@@ -1997,15 +2369,27 @@ class Session(BaseSession):
     def _export_ascii_abundance_table(self, filepath, summary_dict, nlte_summary_dict=None):  #Akshara edits
         if nlte_summary_dict is None:
             nlte_summary_dict = {}
-        out = np.zeros((len(summary_dict), 10))
+        out = np.zeros((len(summary_dict), 17))  #Akshara edits
         for i,(species, (N, logeps, stdev, stderr, XH, XFe)) in \
                 enumerate(iteritems(summary_dict)):
             nlte = nlte_summary_dict.get(species, [np.nan]*6)
             logeps_nlte, XH_nlte, XFe_nlte = nlte[1], nlte[4], nlte[5]
+            # NLiTE per-species correction, kept separately for comparison  #Akshara edits
+            nlite = self.nlite_correction(species) or {}
+            nlite_delta = nlite.get("delta", np.nan)
+            nlite_grid = nlite.get("grid", np.nan)
+            nlite_in_grid = float(nlite["in_grid"]) if "in_grid" in nlite else np.nan
+            # Placco+14 carbon evolutionary correction (C species only)  #Akshara edits
+            carbon = self.carbon_correction(species) or {}
+            dC_evol = carbon.get("correction", np.nan)
             out[i,:] = [species, N, logeps, stdev, stderr, XH, XFe,
-                        logeps_nlte, XH_nlte, XFe_nlte]
+                        logeps_nlte, XH_nlte, XFe_nlte,
+                        nlite_delta, XH + nlite_delta, nlite_grid, nlite_in_grid,
+                        dC_evol, XFe + dC_evol, XFe_nlte + dC_evol]
         names = ["species", "N", "logeps", "stdev", "stderr", "[X/H]", "[X/Fe]",
-                 "logeps_NLTE", "[X/H]_NLTE", "[X/Fe]_NLTE"]
+                 "logeps_NLTE", "[X/H]_NLTE", "[X/Fe]_NLTE",
+                 "dNLiTE", "[X/H]_NLiTE", "NLiTE_grid", "NLiTE_in_grid",
+                 "dC_evol", "[X/Fe]_evol", "[X/Fe]_evol_NLTE"]  #Akshara edits
         tab = astropy.table.Table(out, names=names)
         tab["N"].format = ".0f"
         tab["logeps"].format = "5.2f"
@@ -2016,6 +2400,13 @@ class Session(BaseSession):
         tab["logeps_NLTE"].format = "5.2f"
         tab["[X/H]_NLTE"].format = "5.2f"
         tab["[X/Fe]_NLTE"].format = "5.2f"
+        tab["dNLiTE"].format = "6.3f"  #Akshara edits
+        tab["[X/H]_NLiTE"].format = "5.2f"
+        tab["NLiTE_grid"].format = ".0f"
+        tab["NLiTE_in_grid"].format = ".0f"
+        tab["dC_evol"].format = "5.2f"  #Akshara edits
+        tab["[X/Fe]_evol"].format = "5.2f"
+        tab["[X/Fe]_evol_NLTE"].format = "5.2f"
         tab.write(filepath, format="ascii.fixed_width_two_line")
         return True #raise NotImplementedError
 
@@ -2050,9 +2441,10 @@ class Session(BaseSession):
                     logeps_err = f"{spectral_model.metadata['2_sigma_abundance_error']/2.0:6.3f}"
                 else:
                     logeps_err = "nan"
-                nlte_delta = np.nan
-                logeps_nlte = np.nan
-                logeps_nlte_filled = np.nan
+                nlte_delta = spectral_model.nlte_delta  #Akshara edits
+                logeps_nlte = spectral_model.abundance_nlte  #Akshara edits
+                logeps_nlte_filled = np.nan if spectral_model.is_upper_limit \
+                    else spectral_model.abundance_nlte_filled  #Akshara edits
                 #print("exporting synth",wavelength,species)
             elif isinstance(spectral_model, ProfileFittingModel):
                 line = spectral_model.transitions[0]

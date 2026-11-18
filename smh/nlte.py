@@ -10,6 +10,8 @@ import numpy as np
 import os
 import re
 import requests
+import io  #Akshara edits
+import zipfile  #Akshara edits
 
 from astropy.table import Table
 from glob import glob
@@ -29,6 +31,31 @@ MPIA_ERROR_CODES = {
 INSPECT_URL = "http://www.inspect-stars.com/"
 INSPECT_ELEMENTS = ("Li", "O", "Na", "Mg", "Ti", "Fe", "Sr")
 MPIA_MAX_LINES_PER_REQUEST = 99
+NLITE_URL = "https://nlite.pythonanywhere.com/"  #Akshara edits
+# Preferred NLiTE grids per species (grid numbers as listed on the NLiTE
+# website), tried in order: if the star is outside a grid, the next one is
+# used. Choices follow collaborator recommendations; species not listed use
+# the NLiTE reference grid (1).  #Akshara edits
+NLITE_PREFERRED_GRIDS = {
+    "LiI": [1],      # Wang et al. 2021 (3D NLTE)
+    "CI": [1],       # Amarsi et al. 2019 (1D NLTE)
+    "CH": [1],       # Norris et al. 2019 (1D; only CH grid in NLiTE)
+    "OI": [1],       # Amarsi et al. 2019 (1D NLTE)
+    "NaI": [1],      # Lind et al. 2022 (all lines)
+    "MgI": [4],      # Lind et al. 2022
+    "AlI": [1],      # Lind et al. 2022, resonance lines (4 = subordinate lines)
+    "SiI": [1],      # Amarsi et al. 2017
+    "KI": [1],       # Reggiani et al. 2019
+    "TiI": [1],      # Bergemann et al. 2011 (Mallinson et al. not in NLiTE)
+    "TiII": [1],     # Bergemann et al. 2011 (Mallinson et al. not in NLiTE)
+    "FeI": [4, 1],   # Amarsi et al. 2022 (3D, dwarfs), else mean Mashonkina+11/Bergemann+12 (1D)
+    "FeII": [2, 1],  # Amarsi et al. 2022 (3D, dwarfs), else Bergemann et al. 2012 (1D)
+    "CuI": [1],      # Andrievsky+18/Shi+18/Xu+22 fits (Caliskan et al. not in NLiTE)
+    "ZnI": [1],      # Sitnova et al. 2022
+    "SrII": [1],     # Mashonkina et al. 2022
+    "BaII": [1],     # Mashonkina et al. 2019
+}
+NLITE_AL_SUBORDINATE_GRID = 4  #Akshara edits: Lind et al. 2022, 6696-8773 A lines
 
 
 def parse_stellar_parameters(path):
@@ -395,6 +422,270 @@ def inspect_nlte_correction(element, line, abundance_lte,
         "message": ""
     }
 
+
+def nlite_label(species):  #Akshara edits
+    """
+    Convert an SMHR species (e.g. 26.1) into an NLiTE column label
+    (e.g. "FeII"). NLiTE accepts element names with or without the ion,
+    e.g. "Fe", "FeI", "FeII".
+    """
+    from .utils import species_to_element
+    if round(float(species), 1) == 106.0:  # CH molecule  #Akshara edits
+        return "CH"
+    return species_to_element(round(float(species), 1)).replace(" ", "")
+
+
+def _nlite_form_errors(html):  #Akshara edits
+    errors = re.findall(r'<span style="color: red;">(.*?)</span>', html, re.S)
+    errors = [_strip_html(error).strip() for error in errors]
+    return [error for error in errors if error]
+
+
+def _nlite_read_zip(content):  #Akshara edits
+    """ Return (corrections table, references text) from an NLiTE zip. """
+    archive = zipfile.ZipFile(io.BytesIO(content))
+    table, references = None, ""
+    for name in archive.namelist():
+        if name.endswith("_NLTE_corrections.tsv"):
+            text = archive.read(name).decode("utf-8")
+            table = Table.read(text, format="ascii.tab", fill_values=[("", "nan")])
+        elif name.endswith("_References.txt"):
+            references = archive.read(name).decode("utf-8", "replace")
+    if table is None:
+        raise ValueError("NLiTE zip did not contain an NLTE corrections table")
+    return table, references
+
+
+def _nlite_request(rows, labels, grid=None, timeout=120):  #Akshara edits
+    """
+    Send rows of (Teff, logg, [Fe/H], [label/H]...) to NLiTE and return the
+    (corrections table, references text). With grid=None the "all elements"
+    reference-grid mode is used; otherwise the one-element grid-of-choice
+    mode (one label only).
+    """
+    columns = ["Teff", "logg", "[Fe/H]"] + ["[{}/H]".format(label) for label in labels]
+    tsv = "\t".join(columns) + "\n" + "".join(
+        "\t".join("{:.4f}".format(float(value)) for value in row) + "\n"
+        for row in rows)
+
+    if grid is None:
+        files = {"another_file": ("smhr_nlite_input.tsv", tsv, "text/tab-separated-values")}
+        data = {"action_all": "Compute Corrections"}
+    else:
+        files = {"input_file": ("smhr_nlite_input.tsv", tsv, "text/tab-separated-values")}
+        data = {"action": "Compute Corrections", "el": labels[0],
+                "option": str(int(grid))}
+
+    response = requests.post(NLITE_URL, data=data, files=files,
+                             allow_redirects=False, timeout=timeout)
+    if response.status_code not in (301, 302, 303):
+        response.raise_for_status()
+        errors = _nlite_form_errors(response.text)
+        raise ValueError("NLiTE did not compute corrections{}".format(
+            ": " + "; ".join(errors) if errors else ""))
+
+    # The redirect target carries the job id, element and grid option needed
+    # to download the results.
+    location = response.headers.get("Location", "")
+    query = dict(re.findall(r"[?&]([^=&]+)=([^&]*)", location))
+    if "base_name" not in query:
+        raise ValueError("Could not parse NLiTE redirect: {}".format(location))
+    params = {"base_name": requests.utils.unquote(query["base_name"]),
+              "el": requests.utils.unquote(query.get("element", "all elements").replace("+", " ")),
+              "option": requests.utils.unquote(query.get("option", "-99"))}
+    response = requests.get(NLITE_URL + "download_zip", params=params,
+                            timeout=timeout)
+    response.raise_for_status()
+    return _nlite_read_zip(response.content)
+
+
+def nlite_nlte_corrections(effective_temperature, surface_gravity, metallicity,
+    abundances_xh, grid=None, timeout=120):  #Akshara edits
+    """
+    Request mean (per element/ion) NLTE corrections from NLiTE
+    (https://nlite.pythonanywhere.com/; Koutsouridou et al. 2025), which
+    interpolates within precomputed grids of NLTE corrections averaged over
+    the commonly used lines of each species. Intended for metal-poor stars
+    ([Fe/H] <= -1).
+
+    :param abundances_xh:
+        A dictionary of {NLiTE label: [X/H]_LTE}, e.g. {"BaII": -3.0}.
+
+    :param grid: [optional]
+        NLTE grid number (as listed on the NLiTE website). If None, the
+        "correct all elements" mode with the reference (1) grids is used and
+        all labels are sent in one request. If given, the "one element with
+        grid of choice" mode is used, so only one label may be supplied.
+
+    :returns:
+        A dictionary {"corrections": {label: {"delta", "in_grid", "std",
+        "nlines"}}, "references": str}. Labels without an NLiTE grid are
+        omitted from the corrections.
+    """
+
+    labels = [label for label, xh in abundances_xh.items()
+              if xh is not None and np.isfinite(xh)]
+    if len(labels) == 0:
+        return {"corrections": {}, "references": ""}
+    if grid is not None and len(labels) != 1:
+        raise ValueError("NLiTE grid-of-choice mode takes exactly one element")
+
+    row = [effective_temperature, surface_gravity, metallicity] \
+        + [abundances_xh[label] for label in labels]
+    table, references = _nlite_request(
+        [row], labels, grid=grid, timeout=timeout)  #Akshara edits: shared request helper
+
+    def _value(column):
+        if column not in table.colnames:
+            return np.nan
+        try:
+            value = table[column][0]
+            if np.ma.is_masked(value):  #Akshara edits
+                return np.nan
+            return float(value)
+        except Exception:
+            return np.nan
+
+    corrections = {}
+    for label in labels:
+        key = "[{}/H]".format(label)
+        delta = _value("d{}_NLTE".format(key))
+        if not np.isfinite(delta):
+            continue
+        corrections[label] = {
+            "delta": delta,
+            "in_grid": bool(_value("in_grid_{}".format(key)) == 1),
+            "std": _value("std_d{}_NLTE".format(key)),
+            "nlines": _value("Nlines_d{}_NLTE".format(key)),
+        }
+    return {"corrections": corrections, "references": references}
+
+
+def nlite_diagnose_out_of_grid(effective_temperature, surface_gravity,
+    metallicity, label, abundance_xh, grid=1, timeout=180):  #Akshara edits
+    """
+    Work out which stellar parameter(s) put a star outside an NLiTE grid.
+
+    NLiTE only reports an in_grid flag, so each parameter (Teff, logg,
+    [Fe/H], [X/Fe]) is scanned on its own, holding the others at the star's
+    values, in a single multi-row NLiTE request. [Fe/H] is scanned at fixed
+    [X/Fe] and [X/Fe] at fixed [Fe/H]. A parameter whose scan reaches the
+    grid is one that pushes the star out of it, and the scan gives the
+    approximate in-grid range for that parameter. If no single parameter
+    works, a coarse scan over every pair of parameters finds the nearest
+    in-grid point.
+
+    :returns:
+        A dictionary with `culprits` (list of parameter names), `ranges`
+        ({name: (low, high)}), `nearest` (for the two-parameter case,
+        {name: value}), `values` (the star's values) and `message`.
+    """
+
+    teff, logg, feh = float(effective_temperature), float(surface_gravity), \
+        float(metallicity)
+    xfe = float(abundance_xh) - feh
+    star = [teff, logg, feh, xfe]
+    names = ["Teff", "logg", "[Fe/H]", "[{}/Fe]".format(label)]
+    formats = ["{:.0f}", "{:.2f}", "{:.2f}", "{:+.2f}"]
+    scales = [500., 1.0, 0.5, 0.5]  # for "nearest" in the two-parameter scan
+
+    def to_row(params):  # (Teff, logg, [Fe/H], [X/Fe]) -> NLiTE row
+        return [params[0], params[1], params[2], params[2] + params[3]]
+
+    def query(points):
+        table, _ = _nlite_request([to_row(p) for p in points], [label],
+                                  grid=grid, timeout=timeout)
+        column = "in_grid_[{}/H]".format(label)
+        if column not in table.colnames or len(table) != len(points):
+            raise ValueError("Unexpected NLiTE response while diagnosing grid limits")
+        return np.array([(not np.ma.is_masked(v)) and np.isfinite(float(v))
+                         and float(v) == 1 for v in table[column]], dtype=bool)
+
+    fine = [np.arange(3500., 8000.1, 100.),
+            np.round(np.arange(-0.5, 5.51, 0.1), 2),
+            np.round(np.arange(-5.0, 0.51, 0.1), 2),
+            np.round(np.arange(xfe - 3.0, xfe + 3.01, 0.1), 2)]
+    steps = [100., 0.1, 0.1, 0.1]
+    points, owners = [list(star)], [-1]
+    for i, values in enumerate(fine):
+        for value in values:
+            point = list(star)
+            point[i] = value
+            points.append(point)
+            owners.append(i)
+    in_grid = query(points)
+    owners = np.array(owners)
+
+    culprits, ranges, reasons = [], {}, []
+    for i, name in enumerate(names):
+        values = np.array([p[i] for p in points])[owners == i]
+        flags = in_grid[owners == i]
+        if not np.any(flags):
+            continue
+        runs, current = [], []
+        for value, flag in zip(values, flags):
+            if flag:
+                current.append(value)
+            elif current:
+                runs.append(current)
+                current = []
+        if current:
+            runs.append(current)
+        run = min(runs, key=lambda run: min(abs(v - star[i]) for v in run))
+        low, high = min(run), max(run)
+        ranges[name] = (low, high)
+        culprits.append(name)
+        direction = "too low" if star[i] < low else "too high" if star[i] > high \
+            else "between in-grid regions"
+        fmt = formats[i]
+        reasons.append("{} = {} {} (in grid for ~{} to {})".format(
+            name, fmt.format(star[i]), direction, fmt.format(low), fmt.format(high)))
+
+    nearest = {}
+    if len(culprits):
+        message = "; ".join(reasons)
+        if len(culprits) > 1:
+            message += " [changing any one of these alone is enough]"
+        message += " (other parameters fixed)"
+    else:
+        # Coarse scan over every pair of parameters
+        coarse = [np.arange(3500., 8000.1, 250.),
+                  np.round(np.arange(-0.5, 5.51, 0.5), 2),
+                  np.round(np.arange(-5.0, 0.51, 0.25), 2),
+                  np.round(np.arange(xfe - 2.0, xfe + 2.01, 0.25), 2)]
+        pair_points, pair_owner = [], []
+        for i in range(4):
+            for j in range(i + 1, 4):
+                for a in coarse[i]:
+                    for b in coarse[j]:
+                        point = list(star)
+                        point[i], point[j] = a, b
+                        pair_points.append(point)
+                        pair_owner.append((i, j))
+        pair_in_grid = query(pair_points)
+        best, best_distance = None, np.inf
+        for point, (i, j), flag in zip(pair_points, pair_owner, pair_in_grid):
+            if not flag:
+                continue
+            distance = np.hypot((point[i] - star[i]) / scales[i],
+                                (point[j] - star[j]) / scales[j])
+            if distance < best_distance:
+                best, best_distance = (point, i, j), distance
+        if best is None:
+            message = ("Outside the grid in 3 or more parameters together "
+                       "(no in-grid point found changing one or two of Teff, "
+                       "logg, [Fe/H], [X/Fe])")
+        else:
+            point, i, j = best
+            culprits = [names[i], names[j]]
+            nearest = {names[i]: point[i], names[j]: point[j]}
+            message = ("{} and {} together: nearest in-grid point is {} = {} "
+                       "(star {}), {} = {} (star {}) (coarse scan)").format(
+                names[i], names[j],
+                names[i], formats[i].format(point[i]), formats[i].format(star[i]),
+                names[j], formats[j].format(point[j]), formats[j].format(star[j]))
+    return {"culprits": culprits, "ranges": ranges, "nearest": nearest,
+            "values": dict(zip(names, star)), "message": message}
 
 class ApproximateNLTECorrectionsBase(object):
     pass

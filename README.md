@@ -10,6 +10,58 @@ Authors
  - Andrew R. Casey (Monash)
  - Alex Ji (University of Chicago)
  - Erika Holmbeck (Lawrence Livermore National Laboratory)
+ - Akshara Viswanathan (University of Victoria)
+
+## Summary of Changes past the smhr-rpa version:
+
+Major changes are that we can now query NLTE corrections from MPIA/Inspect database, and compare the final abundances with a literature Milky Way halo catalogue. The rest are pretty much aesthetic changes. Here is a list:
+
+- Added live NLTE querying support through MPIA, with INSPECT fallback for supported non-Fe species. NLTE corrections are applied to both EW (profile-fitting) lines and spectral-synthesis lines:
+  - for synthesis fits, the correction is queried at the labelled central wavelength of the fitted element's line (the wavelength shown in the table), with the species taken from the matching line in the synthesis linelist; if no wavelength label exists, the strongest line of that species is used. The correction is applied to that element's synthesis abundance.
+  - the queried species/wavelength are stored as `nlte_species` and `nlte_wavelength`; re-fitting a synthesis clears its stored NLTE values so they are not stale.
+  - only the first fitted element of a multi-element synthesis is corrected, and synthesis upper limits are not corrected.
+- Added batching for MPIA requests so requests stay within the MPIA 99-line limit.
+- Stored NLTE abundance information separately from LTE abundance information:
+  - `nlte_delta`
+  - `abundance_nlte`
+  - filled NLTE abundance using the species-average correction when an individual line has no finite correction.
+- Added NLTE controls to the Stellar Parameters tab:
+  - `Use NLTE` mode for stellar-parameter solving.
+  - `NLTE` query button for Fe I and Fe II stellar-parameter lines.
+  - completion dialogue showing how many eligible lines received NLTE offsets.
+  - LTE and NLTE Fe abundance summaries.
+  - Mashonkina et al. 2017 (https://ui.adsabs.harvard.edu/abs/2017A%26A...604A.129M/abstract) microturbulence display.
+- Added NLTE controls to the Line Measurements tab:
+  - `NLTE` query button for acceptable abundance lines (both EW and synthesis lines).
+  - completion dialogue showing how many eligible lines received NLTE offsets, including source counts and the EW vs. synthesis breakdown.
+  - NLTE columns in the measurement table.
+- Added global plotting controls in the Line Measurements tab for residual and flux y-axis limits.
+- Added Review tab NLTE overlays:
+  - NLTE triangle markers.
+  - NLTE mean line.
+  - NLTE linear fit line.
+  - NLTE sigma band controlled by the Stellar Parameters `Sigma to plot` value.
+- Added a Review tab `NLTE (NLiTE)` button for per-species NLTE corrections from NLiTE (https://nlite.pythonanywhere.com/, Koutsouridou et al. 2025):
+  - sends Teff, logg, [Fe/H] and each species' LTE [X/H] (several NLiTE grids depend on the abundance itself) and queries every measured species, including C from CH.
+  - the NLiTE correction is kept separately from the line-by-line MPIA/INSPECT corrections and shown in new Review summary columns `Δ NLiTE` (with grid number) and `[X/H] NLiTE`, so the two methods can be compared. `*` marks corrections outside the NLiTE grid.
+  - NLTE abundances use, in order: the line's own MPIA/INSPECT delta, else the mean line-by-line delta of that species, else the NLiTE correction (only if inside the grid).
+  - default grids follow Thomas Nordlander's recommendations (`NLITE_PREFERRED_GRIDS` in `smh/nlte.py`): Li Wang+2021 (3D); C I and O I Amarsi+2019 (1D); CH Norris+2019 (only CH grid); Na, Mg, Al Lind+2022 (Al resonance grid, or subordinate grid if all Al lines are > 5000 Å); Si Amarsi+2017; K Reggiani+2019; Fe I/Fe II Amarsi+2022 (3D, dwarfs only), falling back to the 1D reference grids when the star is outside them; Zn Sitnova+2022; Sr Mashonkina+2022; Ba Mashonkina+2019. Ti (Mallinson et al.) and Cu (Caliskan et al.) are not available in NLiTE, so their reference grids are used. All other species use the NLiTE reference (1) grid.
+  - grids can be overridden per element/ion in the `NLiTE grids` box (e.g. `Na=4, BaII=3`, grid numbers as listed on the NLiTE website).
+  - NLiTE is designed for metal-poor stars ([Fe/H] <= -1), so the button warns for more metal-rich stars.
+  - when a star is outside an NLiTE grid (`*` in the table; NLiTE then returns the value at the grid edge), SMHR works out which parameter is responsible. It scans Teff, logg, [Fe/H] (at fixed [X/Fe]) and [X/Fe] one at a time in one extra multi-row NLiTE request and reports e.g. `[EuII/Fe] = -0.72 too low (in grid for ~-0.42 to +1.48)`. If no single parameter is enough, a coarse scan of every pair reports the nearest in-grid point, e.g. `Teff and logg together`. The reason is shown in the NLiTE dialog and in the `Δ NLiTE` column tooltip, including why a preferred grid (e.g. Amarsi+2022 Fe) fell back to another grid.
+  - stored in the session as `nlte_element_corrections` (grid, in-grid flag, source), with the NLiTE BibTeX references in `nlte_element_references`. Exported abundance tables include `dNLiTE`, `[X/H]_NLiTE`, `NLiTE_grid` and `NLiTE_in_grid`. Re-run after changing stellar parameters.
+- Added a Review tab `C evol (Placco+14)` button for the carbon evolutionary correction of Placco et al. (2014, ApJ, 797, 21), using the online calculator at https://vplacco.pythonanywhere.com/ (reimplemented from the `carbcor` package, https://github.com/guilimberg/carbcor, so no extra install is needed):
+  - corrects the observed (LTE) [C/Fe] of CH (106.0) and/or C I (6.0) for carbon depletion by CN processing on the upper red giant branch ([N/Fe] = 0 case). Inputs: session log(g), the measured [Fe/H] (Fe I or Fe II following `what_fe`) and LTE [C/Fe]. Uncertainties come from the stellar-parameter log(g) error and the line-to-line scatter (default 0.1) and give a Monte Carlo MAD uncertainty on the correction.
+  - the correction is defined on the observed LTE [C/Fe], so it is independent of and additive with NLTE: [C/Fe]_final = [C/Fe]_LTE + Δevol + ΔNLTE. LTE abundances are not changed.
+  - Review summary columns `Δ C evol`, `[X/Fe] evol` and `[X/Fe] evol+NLTE` (C rows only). `!` marks a correction that is stale because [C/Fe] or log(g) changed since it was computed. The tooltip shows the inputs and any inputs clipped to the calculator's grid (log(g) 0–5, [Fe/H] −5.5–0, [C/Fe] −1–3).
+  - stored in the session as `carbon_evolutionary_corrections`; exported abundance tables include `dC_evol`, `[X/Fe]_evol` and `[X/Fe]_evol_NLTE`.
+- Added a Literature tab after Review:
+  - reads `txt_table_recommended_v2021_MW.tsv` (SAGA data).
+  - plots SAGA literature abundance comparisons.
+  - overlays the current star in LTE and NLTE.
+  - refreshes from the current Review/abundance summary. (PS. Only works when you save the .smh file and reopen it, will fix this later)
+- Updated exported abundance tables to include NLTE correction and final NLTE abundance columns (now filled for synthesis lines too).
+- Added robust EW abundance measurement batching around MOOG `abfind` calls (this is only an issue if you have a linelist with lines that are way too close to each other).
 
 Installation
 ------------

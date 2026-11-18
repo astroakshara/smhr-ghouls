@@ -1871,7 +1871,9 @@ class MeasurementTableModelBase(QtCore.QAbstractTableModel):
     
 class MeasurementSummaryTableModel(QtCore.QAbstractTableModel):  #Akshara edits
     header = ["El.", "Species", "N", "A(X)", "A(X) NLTE",
-              "σ(X)", "[X/H]", "[X/H] NLTE", "[X/Fe]", "[X/Fe] NLTE"]
+              "σ(X)", "[X/H]", "[X/H] NLTE", "[X/Fe]", "[X/Fe] NLTE",
+              "Δ NLiTE", "[X/H] NLiTE",
+              "Δ C evol", "[X/Fe] evol", "[X/Fe] evol+NLTE"]  #Akshara edits
     def __init__(self, parent, session, *args):
         super(MeasurementSummaryTableModel, self).__init__(parent, *args)
         self.parent = parent 
@@ -1918,6 +1920,15 @@ class MeasurementSummaryTableModel(QtCore.QAbstractTableModel):  #Akshara edits
         self.dataChanged.emit(self.createIndex(row, 0),
                               self.createIndex(row, self.columnCount()))
         return None
+    def _carbon_is_stale(self, species, carbon):  #Akshara edits
+        """ True if [C/Fe] or logg changed since the correction was computed. """
+        try:
+            XFe = self.summary[species][5]
+            logg = self.session.stellar_parameters[1]
+            return abs(XFe - carbon["cfe_lte"]) > 0.02 \
+                or abs(logg - carbon["stellar_parameters"][1]) > 0.02
+        except Exception:
+            return False
     def rowCount(self, parent=None):
         return len(self.all_species)
     def columnCount(self, parent=None):
@@ -1934,6 +1945,40 @@ class MeasurementSummaryTableModel(QtCore.QAbstractTableModel):  #Akshara edits
     def data(self, index, role):
         if not index.isValid(): return None
         if role==QtCore.Qt.FontRole: return _QFONT
+        if role == QtCore.Qt.ToolTipRole and index.column() >= 12:  #Akshara edits
+            carbon = self.session.carbon_correction(self.all_species[index.row()]) \
+                if self.session is not None else None
+            if not carbon:
+                return "Carbon evolutionary correction (Placco et al. 2014): " \
+                    "click 'C evol (Placco+14)'. Only for C species."
+            inputs = carbon.get("inputs", {})
+            tip = ("Placco et al. 2014 evolutionary correction ([N/Fe]=0 case)\n"
+                   "Inputs: logg = {:.2f} ± {:.2f}, [Fe/H] = {:.2f} ± {:.2f} ({}), "
+                   "[C/Fe]_LTE = {:.2f} ± {:.2f}").format(
+                inputs.get("logg", np.nan), inputs.get("e_logg", np.nan),
+                inputs.get("[Fe/H]", np.nan), inputs.get("e_feh", np.nan),
+                carbon.get("feh_source", ""), inputs.get("[C/Fe]", np.nan),
+                inputs.get("e_cfe", np.nan))
+            if carbon.get("message"):
+                tip += "\n" + carbon["message"]
+            if self._carbon_is_stale(self.all_species[index.row()], carbon):
+                tip += "\n! [C/Fe] or logg changed since the correction was computed: re-run"
+            return tip
+        if role == QtCore.Qt.ToolTipRole and index.column() >= 10:  #Akshara edits
+            nlite = self.session.nlite_correction(self.all_species[index.row()]) \
+                if self.session is not None else None
+            if not nlite:
+                return "No NLiTE correction (click NLTE (NLiTE))"
+            tip = "{}; {} grid; {}".format(
+                nlite.get("source", "NLiTE"),
+                "inside" if nlite.get("in_grid") else "OUTSIDE (not used)",
+                "used for NLTE abundance only if no line-by-line correction")
+            if nlite.get("out_of_grid_reason"):  #Akshara edits
+                tip += "\nOut of grid because: " + nlite["out_of_grid_reason"]
+            if nlite.get("preferred_grid_reason"):
+                tip += "\nPreferred grid {} not used because: {}".format(
+                    nlite.get("preferred_grids", ["?"])[0], nlite["preferred_grid_reason"])
+            return tip
         if role != QtCore.Qt.DisplayRole: return None
 
         row = index.row()
@@ -1964,4 +2009,24 @@ class MeasurementSummaryTableModel(QtCore.QAbstractTableModel):  #Akshara edits
             return "{:.2f}".format(XFe)
         elif col == 9:
             return "{:.2f}".format(XFe_nlte)
+        elif col in (12, 13, 14):  #Akshara edits: Placco+14 carbon correction
+            carbon = self.session.carbon_correction(species) or {}
+            delta = carbon.get("correction", np.nan)
+            if not np.isfinite(delta):
+                return ""
+            flag = "!" if self._carbon_is_stale(species, carbon) else ""
+            if col == 12:
+                return "{:+.2f}±{:.2f}{}".format(delta, carbon.get("mad", 0.0), flag)
+            if col == 13:
+                return "{:.2f}{}".format(XFe + delta, flag)
+            return "{:.2f}{}".format(XFe_nlte + delta, flag)
+        elif col in (10, 11):  #Akshara edits
+            nlite = self.session.nlite_correction(species) or {}
+            delta = nlite.get("delta", np.nan)
+            if not np.isfinite(delta):
+                return ""
+            flag = "" if nlite.get("in_grid") else "*"
+            if col == 10:
+                return "{:+.2f} (g{}){}".format(delta, nlite.get("grid", "?"), flag)
+            return "{:.2f}{}".format(XH + delta, flag)
         raise ValueError("row={} col={} species={}".format(row, col, species))

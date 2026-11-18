@@ -982,6 +982,12 @@ class ChemicalAbundancesTab(QtGui.QWidget):
         if len(by_source):
             details = "\n\n" + "\n".join("{}: {}".format(source, count)
                 for source, count in sorted(by_source.items()))
+        by_type = summary.get("by_type", {}) if isinstance(summary, dict) else {}  #Akshara edits
+        total_by_type = summary.get("total_by_type", {}) if isinstance(summary, dict) else {}
+        if len(total_by_type):
+            details += "\n\n" + "\n".join("{} lines: {} out of {}".format(
+                model_type, by_type.get(model_type, 0), count)
+                for model_type, count in sorted(total_by_type.items()))
         QtGui.QMessageBox.information(
             self, title,
             "NLTE querying finished.\n\nFound NLTE offsets for {} out of {} lines.{}"

@@ -505,6 +505,10 @@ class SpectralSynthesisModel(BaseSpectralModel):
 
         self.metadata["fitted_result"] = (named_p_opt, cov, fitting_metadata)
         self.metadata["is_acceptable"] = True
+        # A new synthesis fit invalidates any stored NLTE result  #Akshara edits
+        for key in ("abundance_nlte", "nlte_delta", "nlte_source",
+                    "nlte_message", "nlte_species", "nlte_wavelength"):
+            self.metadata.pop(key, None)
         if "vrad" in self.parameter_names:
             self.metadata["manual_rv"] = named_p_opt["vrad"]
         if "sigma_smooth" in self.parameter_names:

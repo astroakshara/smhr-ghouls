@@ -260,19 +260,34 @@ class BaseSpectralModel(object):
         return self.metadata.get("nlte_delta", np.nan)
 
     @property
+    def nlte_species(self):  #Akshara edits
+        """
+        Species used for NLTE corrections. For synthesis models this is the
+        species of the line that was queried (stored when NLTE is applied),
+        otherwise the first species of the model.
+        """
+        species = self.metadata.get("nlte_species", None)
+        if species is not None:
+            return round(float(species), 1)
+        try:
+            return round(float(self.species[0][0]
+                if isinstance(self.species[0], (list, tuple, np.ndarray))
+                else self.species[0]), 1)
+        except Exception:
+            return np.nan
+
+    @property
     def nlte_delta_filled(self):
         delta = self.nlte_delta
         if np.isfinite(delta):
             return delta
-        try:
-            species = round(float(np.ravel(self.species)[0]), 1)
-        except Exception:
+        species = self.nlte_species  #Akshara edits
+        if not np.isfinite(species):
             return np.nan
         deltas = []
         for model in self.session.spectral_models:
-            try:
-                model_species = round(float(np.ravel(model.species)[0]), 1)
-            except Exception:
+            model_species = model.nlte_species  #Akshara edits
+            if not np.isfinite(model_species):
                 continue
             if model_species != species:
                 continue
@@ -280,8 +295,25 @@ class BaseSpectralModel(object):
             if np.isfinite(model_delta):
                 deltas.append(model_delta)
         if len(deltas) == 0:
+            # Fall back to the NLiTE mean correction for this species  #Akshara edits
+            correction = self.nlte_element_correction
+            if correction is not None:
+                return float(correction["delta"])
             return np.nan
         return float(np.mean(deltas))
+
+    @property
+    def nlte_element_correction(self):  #Akshara edits
+        """ The NLiTE per-species correction for this model, if it is usable. """
+        try:
+            corrections = self.session.metadata.get("nlte_element_corrections", {})
+            correction = corrections.get("{:.1f}".format(self.nlte_species))
+        except Exception:
+            return None
+        if not correction or not correction.get("use", False) \
+        or not np.isfinite(correction.get("delta", np.nan)):
+            return None
+        return correction
 
     @property
     def abundance_nlte_filled(self):

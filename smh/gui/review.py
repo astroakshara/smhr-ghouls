@@ -239,7 +239,155 @@ class ReviewTab(QtGui.QWidget):
         self.btn_refresh = btn_refresh
         self.btn_refresh.clicked.connect(self.new_session_loaded)
 
+        ## NLiTE element-level NLTE corrections  #Akshara edits
+        hbox = QtGui.QHBoxLayout()
+        hbox.addWidget(QtGui.QLabel("NLiTE grids:", self))
+        self.edit_nlite_grids = QtGui.QLineEdit(self)
+        self.edit_nlite_grids.setPlaceholderText(
+            "preferred grids (optional overrides e.g. Na=4, BaII=3)")  #Akshara edits
+        self.edit_nlite_grids.setToolTip(
+            "Optional NLiTE grid numbers per element/ion, as listed on "
+            "https://nlite.pythonanywhere.com/. Blank = preferred grids "
+            "(smh.nlte.NLITE_PREFERRED_GRIDS).")
+        hbox.addWidget(self.edit_nlite_grids)
+        self.btn_nlite = QtGui.QPushButton("NLTE (NLiTE)", self)
+        self.btn_nlite.setToolTip(
+            "Query NLiTE mean NLTE corrections for every species. Shown in the "
+            "'Δ NLiTE' columns; used in the NLTE abundances only for species "
+            "without line-by-line (MPIA/INSPECT) corrections.")  #Akshara edits
+        self.btn_nlite.clicked.connect(self.clicked_apply_nlite)
+        hbox.addWidget(self.btn_nlite)
+        ## Placco et al. 2014 carbon evolutionary correction  #Akshara edits
+        self.btn_carbon = QtGui.QPushButton("C evol (Placco+14)", self)
+        self.btn_carbon.setToolTip(
+            "Evolutionary correction to the observed [C/Fe] for CN processing "
+            "on the upper RGB (Placco et al. 2014; vplacco.pythonanywhere.com). "
+            "Shown in the 'Δ C evol' columns; LTE abundances are not changed.")
+        self.btn_carbon.clicked.connect(self.clicked_carbon_correction)
+        hbox.addWidget(self.btn_carbon)
+        vbox.addLayout(hbox)
+
         return vbox
+
+    def _parse_nlite_grids(self):  #Akshara edits
+        text = self.edit_nlite_grids.text().strip()
+        overrides = {}
+        if not text:
+            return overrides
+        for item in text.replace(";", ",").split(","):
+            item = item.strip()
+            if not item:
+                continue
+            if "=" not in item:
+                raise ValueError("Could not parse '{}' (use e.g. Na=4)".format(item))
+            key, value = item.split("=", 1)
+            overrides[key.strip().replace(" ", "")] = int(value.strip())
+        return overrides
+
+    def clicked_carbon_correction(self):  #Akshara edits
+        session = self.parent.session
+        if session is None:
+            return None
+        QtGui.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            result = session.apply_carbon_evolutionary_correction()
+        except Exception as e:
+            QtGui.QApplication.restoreOverrideCursor()
+            logger.exception("Carbon correction failed")
+            QtGui.QMessageBox.warning(self, "Carbon correction",
+                "Carbon correction failed:\n{}".format(e))
+            return None
+        QtGui.QApplication.restoreOverrideCursor()
+        self.new_session_loaded()
+
+        lines = []
+        for label, r in result["results"].items():
+            inputs = r["inputs"]
+            lines.append("{}: Δ[C/Fe] = {:+.2f} ± {:.2f} (MAD)  ->  [C/Fe] = {:.2f}\n"
+                         "    logg = {:.2f}, [Fe/H] = {:.2f} ({}), [C/Fe]_LTE = {:.2f}{}".format(
+                label, r["correction"], r["mad"], r["cfe_lte"] + r["correction"],
+                inputs["logg"], inputs["[Fe/H]"], r["feh_source"], r["cfe_lte"],
+                "\n    " + r["message"] if r["message"] else ""))
+        if not lines and not result["errors"]:
+            message = "No carbon (CH or C I) abundance measured."
+        else:
+            message = "Placco et al. (2014) carbon evolutionary corrections " \
+                      "([N/Fe] = 0 case):\n\n" + "\n".join(lines)
+        if result["errors"]:
+            message += "\n\nErrors:\n" + "\n".join(result["errors"])
+        QtGui.QMessageBox.information(self, "Carbon correction", message)
+        return None
+
+    def clicked_apply_nlite(self):  #Akshara edits
+        session = self.parent.session
+        if session is None:
+            return None
+        try:
+            overrides = self._parse_nlite_grids()
+        except ValueError as e:
+            QtGui.QMessageBox.warning(self, "NLiTE", str(e))
+            return None
+        try:
+            MH = session.stellar_parameters[3]
+        except Exception:
+            MH = np.nan
+        if np.isfinite(MH) and MH > -1:
+            reply = QtGui.QMessageBox.question(self, "NLiTE",
+                "NLiTE grids are designed for metal-poor stars ([Fe/H] <= -1); "
+                "this star has [M/H] = {:.2f}. Query anyway?".format(MH),
+                QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
+            if reply != QtGui.QMessageBox.Yes:
+                return None
+
+        QtGui.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            result = session.apply_nlite_nlte_corrections(grid_overrides=overrides)
+        except Exception as e:
+            QtGui.QApplication.restoreOverrideCursor()
+            logger.exception("NLiTE query failed")
+            QtGui.QMessageBox.warning(self, "NLiTE", "NLiTE query failed:\n{}".format(e))
+            return None
+        QtGui.QApplication.restoreOverrideCursor()
+
+        self.new_session_loaded()
+        if hasattr(self.parent, "literature_tab"):
+            try:
+                self.parent.literature_tab.refresh_plot()
+            except Exception as e:
+                logger.debug("Could not refresh literature tab: {}".format(e))
+
+        corrections = result.get("corrections", {})
+        line_by_line = set(result.get("has_line_by_line", []))  #Akshara edits: defined before use
+        lines = []
+        for label in result.get("applied", []):
+            c = corrections[label]
+            lines.append("{}: {:+.3f} (grid {}){}".format(
+                label, c["delta"], c["grid"],
+                "  [comparison only: has line-by-line]" if label in line_by_line
+                else "  [used for NLTE]"))  #Akshara edits
+        message = "NLiTE corrections found for {} species (in grid).".format(
+            len(result.get("applied", [])))
+        if lines:
+            message += "\n\n" + "\n".join(lines)
+        if result.get("out_of_grid"):
+            message += "\n\nOutside NLiTE grid (not applied):\n" + "\n".join(
+                "{} ({:+.3f}, grid {}){}".format(
+                    label, corrections[label]["delta"], corrections[label]["grid"],
+                    ": " + corrections[label]["out_of_grid_reason"]
+                    if corrections[label].get("out_of_grid_reason") else "")
+                for label in result["out_of_grid"])  #Akshara edits: show why
+        if result.get("fell_back"):  #Akshara edits
+            message += "\n\nOutside preferred grid, used fallback:\n" + "\n".join(
+                result["fell_back"])  #Akshara edits
+        if result.get("no_grid"):
+            message += "\n\nNo NLiTE grid: " + ", ".join(result["no_grid"])
+        if result.get("skipped_line_by_line"):
+            message += "\n\nAlready have line-by-line NLTE (not queried): " \
+                + ", ".join(result["skipped_line_by_line"])
+        if result.get("errors"):
+            message += "\n\nErrors:\n" + "\n".join(result["errors"])
+        QtGui.QMessageBox.information(self, "NLiTE", message)
+        return None
 
     def _init_scatterplots(self):
         filters = [lambda x: (x.is_acceptable) and (not x.user_flag) and (not x.is_upper_limit),
